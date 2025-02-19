@@ -1,4 +1,6 @@
 import logging
+
+from PyQt5 import QtWidgets
 from sqlalchemy import create_engine, inspect
 import sqlalchemy.exc
 from diff_DB import compare_environments, generate_sql_scripts, generate_excel_report
