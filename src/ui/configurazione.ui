@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Configurazione</class>
+ <widget class="QWidget" name="Configurazione">
+  <layout class="QVBoxLayout" name="verticalLayout_1">
+   <item>
+    <widget class="QPushButton" name="add_conn_button">
+     <property name="text">
+      <string>Aggiungi Stringa di Connessione</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="conn_table">
+     <property name="columnCount">
+      <number>2</number>
+     </property>
+     <property name="horizontalHeaderLabels">
+      <stringlist>
+       <string>Nome Connessione</string>
+       <string>Stringa di Connessione</string>
+      </stringlist>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

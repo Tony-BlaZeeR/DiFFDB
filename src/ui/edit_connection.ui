@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>EditConnectionDialog</class>
+ <widget class="QDialog" name="EditConnectionDialog">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="label_conn_name">
+     <property name="text">
+      <string>Nome Connessione</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLineEdit" name="conn_name_input"/>
+   </item>
+   <item>
+    <widget class="QLabel" name="label_conn_string">
+     <property name="text">
+      <string>Stringa di Connessione</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLineEdit" name="conn_string_input"/>
+   </item>
+   <item>
+    <widget class="QPushButton" name="edit_button">
+     <property name="text">
+      <string>Modifica</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
