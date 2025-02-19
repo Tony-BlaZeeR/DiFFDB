@@ -6,13 +6,19 @@ import qtawesome as qta
 from sqlalchemy import create_engine, inspect
 import sqlalchemy.exc
 from PyQt5.QtWinExtras import QtWin
+
+from config.appConfig import AppConfig, get_config
 from dialogs import AddConnectionDialog, EditConnectionDialog
 from utils import compare_environments, generate_sql_scripts, generate_excel_report
 
 class MainWindow(QtWidgets.QMainWindow):
+
+    connectionFile: str
+
     def __init__(self):
         super(MainWindow, self).__init__()
-        
+        self.connectionFile = get_config(AppConfig.CONNECTION_FILE_PATH)
+
         ui_path = os.path.join(os.path.dirname(__file__), 'ui', 'main_window.ui')
         print(f"UI Path: {ui_path}")  # Print the UI path for debugging
         if not os.path.exists(ui_path):
@@ -121,13 +127,13 @@ class MainWindow(QtWidgets.QMainWindow):
             conn_name = conn_table.item(row, 0).text()
             conn_string = conn_table.item(row, 1).text()
             connections.append(f"{conn_name},{conn_string}")
-        with open('src/DB.txt', 'w') as file:
+        with open(self.connectionFile, 'w') as file:
             file.write("\n".join(connections))
 
     def load_connections_from_file(self):
         conn_table = self.tabWidget.widget(1).conn_table
-        if os.path.exists('src/DB.txt'):
-            with open('src/DB.txt', 'r') as file:
+        if os.path.exists(self.connectionFile):
+            with open(self.connectionFile, 'r') as file:
                 connections = file.readlines()
                 for connection in connections:
                     conn_name, conn_string = connection.strip().split(',')
@@ -234,8 +240,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def load_connections_into_comboboxes(self, tab):
         tab.comboBox1.clear()
         tab.comboBox2.clear()
-        if os.path.exists('src/DB.txt'):
-            with open('src/DB.txt', 'r') as file:
+        if os.path.exists(self.connectionFile):
+            with open(self.connectionFile, 'r') as file:
                 connections = file.readlines()
                 for connection in connections:
                     conn_name, conn_string = connection.strip().split(',')
