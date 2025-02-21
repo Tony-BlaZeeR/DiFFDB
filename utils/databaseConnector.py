@@ -12,9 +12,9 @@ class DatabaseConnector:
     def get_new_session(self) -> Session:
         return self.SessionLocal()
 
-    def close_session(self: Session):
+    def close_session(self, session: Session):
         try:
-            self.close()
+            session.close()
         except SQLAlchemyError as e:
             raise SQLAlchemyError(get_error_message(ErrorMessages.SQLA_CLOSE, error=e))
 
@@ -28,12 +28,12 @@ class DatabaseConnector:
             session.rollback()
             raise SQLAlchemyError(get_error_message(ErrorMessages.SQLA_QUERY, error=e))
         finally:
-            self.close_session()
+            self.close_session(session)
 
     def test_connection(self) -> bool:
         try:
             with self.engine.connect() as conn:
-                return conn.closed == False
+                return not conn.closed
         except SQLAlchemyError as e:
             print(f"Errore di connessione: {e}")
             return False

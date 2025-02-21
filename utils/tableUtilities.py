@@ -30,16 +30,14 @@ def parse_ddl(line):
                 is_create_stmt = True
                 continue
             if is_create_stmt and token.value.startswith("("):
-                # Parse nome tabella
                 tablename = get_table_name(tokens[:i])
-                # Parse delle colonne e dei tipi
                 txt = token.value
                 columns_and_types = (
                     get_columns_and_types(txt[1:txt.rfind(")")].split(",\n")))
                 break
     return tablename, columns_and_types
 
-def compare_ddl(old_ddl: str, new_ddl: str, dialect = "postgresql"):
+def compare_ddl(old_ddl: str, new_ddl: str, dialect="postgresql"):
     old_table, old_columns = parse_ddl(old_ddl)
     new_table, new_columns = parse_ddl(new_ddl)
 

@@ -1,7 +1,11 @@
 import sys
 import os
 from PyQt5 import QtWidgets, QtGui
-from main_window import MainWindow
+
+# Aggiungi il percorso del modulo diff_DB al PYTHONPATH
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+from src.main_window import MainWindow  
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
