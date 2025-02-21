@@ -8,5 +8,5 @@ class ErrorMessages(Enum):
     SQLA_CLOSE = "Errore nella chiusura della sessione: {error}"
     SQLA_QUERY = "Errore nell'esecuzione della query: {error}"
 
-def get_error_message(error: ErrorMessages):
-    return error.value
+def get_error_message(error: ErrorMessages, **kwargs):
+    return error.value.format(**kwargs)

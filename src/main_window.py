@@ -8,23 +8,20 @@ import sqlalchemy.exc
 from PyQt5.QtWinExtras import QtWin
 
 from config.appConfig import AppConfig, get_config
-from dialogs import AddConnectionDialog, EditConnectionDialog
-from utils import compare_environments, generate_sql_scripts, generate_excel_report
+from src.dialogs import AddConnectionDialog, EditConnectionDialog  # Corrected import path
+#from utils import compare_environments, generate_sql_scripts, generate_excel_report
+from diff_DB import compare_environments, generate_sql_scripts, generate_excel_report
 
 class MainWindow(QtWidgets.QMainWindow):
-
-    connectionFile: str
-
     def __init__(self):
         super(MainWindow, self).__init__()
-        self.connectionFile = get_config(AppConfig.CONNECTION_FILE_PATH)
-
-        ui_path = os.path.join(os.path.dirname(__file__), 'ui', 'main_window.ui')
+        
+        ui_path = os.path.join(os.path.dirname(__file__), '..', 'ui', 'main_window.ui')
         print(f"UI Path: {ui_path}")  # Print the UI path for debugging
         if not os.path.exists(ui_path):
             raise FileNotFoundError(f"The UI file was not found: {ui_path}")
         uic.loadUi(ui_path, self)
-        self.setStyleSheet(open('src/styles/style.qss').read())
+        self.setStyleSheet(open(os.path.join(os.path.dirname(__file__), '..', 'styles', 'style.qss')).read())
 
         # Set application name and design for Windows taskbar
         self.setWindowTitle("DiFFDB")
@@ -32,7 +29,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QtWin.setCurrentProcessExplicitAppUserModelID(app_id)
 
         # Set window icon
-        icon_path = os.path.join(os.path.dirname(__file__), 'images', 'logo.png')
+        icon_path = os.path.join(os.path.dirname(__file__), '..', 'images', 'logo.png')
         self.setWindowIcon(QtGui.QIcon(icon_path))
 
         # Create custom title bar
@@ -127,13 +124,13 @@ class MainWindow(QtWidgets.QMainWindow):
             conn_name = conn_table.item(row, 0).text()
             conn_string = conn_table.item(row, 1).text()
             connections.append(f"{conn_name},{conn_string}")
-        with open(self.connectionFile, 'w') as file:
+        with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt'), 'w') as file:
             file.write("\n".join(connections))
 
     def load_connections_from_file(self):
         conn_table = self.tabWidget.widget(1).conn_table
-        if os.path.exists(self.connectionFile):
-            with open(self.connectionFile, 'r') as file:
+        if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt')):
+            with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt'), 'r') as file:
                 connections = file.readlines()
                 for connection in connections:
                     conn_name, conn_string = connection.strip().split(',')
@@ -158,7 +155,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Add logo to title bar
         logo_label = QtWidgets.QLabel(title_bar)
-        logo_pixmap = QPixmap("src/images/logo.png").scaled(20, 20, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        logo_pixmap = QPixmap(os.path.join(os.path.dirname(__file__), '..', 'images', 'logo.png')).scaled(20, 20, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         logo_label.setPixmap(logo_pixmap)
         title_bar_layout.addWidget(logo_label)
 
@@ -195,9 +192,9 @@ class MainWindow(QtWidgets.QMainWindow):
             event.accept()
 
     def load_tabs(self):
-        home_path = os.path.join(os.path.dirname(__file__), 'ui', 'home.ui')
-        configurazione_path = os.path.join(os.path.dirname(__file__), 'ui', 'configurazione.ui')
-        scelta_path = os.path.join(os.path.dirname(__file__), 'ui', 'scelta.ui')
+        home_path = os.path.join(os.path.dirname(__file__), '..', 'ui', 'home.ui')
+        configurazione_path = os.path.join(os.path.dirname(__file__), '..', 'ui', 'configurazione.ui')
+        scelta_path = os.path.join(os.path.dirname(__file__), '..', 'ui', 'scelta.ui')
 
         tab1 = uic.loadUi(home_path)
         tab2 = uic.loadUi(configurazione_path)
@@ -218,7 +215,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Set logo in Home tab
         logo_label = QtWidgets.QLabel(tab1)
-        logo_pixmap = QPixmap("src/images/logo.png").scaled(100, 100, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        logo_pixmap = QPixmap(os.path.join(os.path.dirname(__file__), '..', 'images', 'logo.png')).scaled(100, 100, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         logo_label.setPixmap(logo_pixmap)
         logo_label.setAlignment(QtCore.Qt.AlignCenter)
         tab1.layout().addWidget(logo_label)
@@ -240,8 +237,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def load_connections_into_comboboxes(self, tab):
         tab.comboBox1.clear()
         tab.comboBox2.clear()
-        if os.path.exists(self.connectionFile):
-            with open(self.connectionFile, 'r') as file:
+        if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt')):
+            with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt'), 'r') as file:
                 connections = file.readlines()
                 for connection in connections:
                     conn_name, conn_string = connection.strip().split(',')
