@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 from PyQt5 import QtWidgets, uic, QtCore, QtGui
 from PyQt5.QtGui import QPixmap
@@ -16,6 +17,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
         
+        # Inizializza drag_position
+        self.drag_position = None
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
         ui_path = os.path.join(os.path.dirname(__file__), '..', 'ui', 'main_window.ui')
         print(f"UI Path: {ui_path}")  # Print the UI path for debugging
         if not os.path.exists(ui_path):
@@ -67,12 +71,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         for row in range(row_count):
             edit_button = QtWidgets.QPushButton()
-            edit_button.setIcon(qta.icon('fa.pencil', color=icon_color))
+            edit_button.setIcon(qta.icon('fa5s.pencil-alt', color=icon_color))
             edit_button.clicked.connect(lambda _, r=row: self.open_edit_connection_dialog(r))
             conn_table.setCellWidget(row, 2, edit_button)
 
             delete_button = QtWidgets.QPushButton()
-            delete_button.setIcon(qta.icon('fa.trash', color=icon_color))
+            delete_button.setIcon(qta.icon('fa5s.trash-alt', color=icon_color))
             delete_button.clicked.connect(lambda _, r=row: self.delete_row(r))
             conn_table.setCellWidget(row, 3, delete_button)
 
@@ -124,13 +128,13 @@ class MainWindow(QtWidgets.QMainWindow):
             conn_name = conn_table.item(row, 0).text()
             conn_string = conn_table.item(row, 1).text()
             connections.append(f"{conn_name},{conn_string}")
-        with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt'), 'w') as file:
+        with open(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt'), 'w') as file:
             file.write("\n".join(connections))
 
     def load_connections_from_file(self):
         conn_table = self.tabWidget.widget(1).conn_table
-        if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt')):
-            with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt'), 'r') as file:
+        if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt')):
+            with open(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt'), 'r') as file:
                 connections = file.readlines()
                 for connection in connections:
                     conn_name, conn_string = connection.strip().split(',')
@@ -183,11 +187,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
+            # Store the position of the mouse relative to the top-left corner of the window
             self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() == QtCore.Qt.LeftButton:
+        if event.buttons() == QtCore.Qt.LeftButton and self.drag_position is not None:
+            # Move the window based on the mouse's current position
             self.move(event.globalPos() - self.drag_position)
             event.accept()
 
@@ -205,9 +211,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         icon_color = '#A9B7C6'  # Colore del testo
 
-        self.tabWidget.insertTab(0, tab1, qta.icon('fa.home', color=icon_color), "Home")
-        self.tabWidget.insertTab(1, tab2, qta.icon('fa.cog', color=icon_color), "Configurazione")
-        self.tabWidget.insertTab(2, tab3, qta.icon('fa.database', color=icon_color), "Scelta")
+        self.tabWidget.insertTab(0, tab1, qta.icon('fa5s.home', color=icon_color), "Home")
+        self.tabWidget.insertTab(1, tab2, qta.icon('fa5s.cog', color=icon_color), "Configurazione")
+        self.tabWidget.insertTab(2, tab3, qta.icon('fa5s.database', color=icon_color), "Scelta")
 
         # Ensure tab1 has a layout
         if tab1.layout() is None:
@@ -237,8 +243,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def load_connections_into_comboboxes(self, tab):
         tab.comboBox1.clear()
         tab.comboBox2.clear()
-        if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt')):
-            with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'DB.txt'), 'r') as file:
+        if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt')):
+            with open(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt'), 'r') as file:
                 connections = file.readlines()
                 for connection in connections:
                     conn_name, conn_string = connection.strip().split(',')
@@ -256,19 +262,30 @@ class MainWindow(QtWidgets.QMainWindow):
         if index == 2:  # Assuming "Scelta" is the third tab (index 2)
             self.load_connections_into_comboboxes(self.tabWidget.widget(2))
 
-    def compare_svi_col(self):
-        self.compare_environments('SVI', 'COL')
+    #def compare_svi_col(self):
+        #self.compare_environments('SVI', 'COL')
 
-    def compare_col_pre(self):
-        self.compare_environments('COL', 'PRE')
+    #def compare_col_pre(self):
+        #self.compare_environments('COL', 'PRE')
 
-    def compare_svi_pre(self):
-        self.compare_environments('SVI', 'PRE')
+    #def compare_svi_pre(self):
+        #self.compare_environments('SVI', 'PRE')
     
     def compare_environments(self):
         # Get connection strings from combo boxes
         oracle_conn_svi = self.tabWidget.widget(2).comboBox1.currentData()
         oracle_conn_col = self.tabWidget.widget(2).comboBox2.currentData()
+        
+        # Accedi al tab "Scelta"
+        scelta_tab = self.tabWidget.widget(2)  # Assumendo che "Scelta" sia il terzo tab (indice 2)
+
+        # Recupera i valori selezionati nei QComboBox
+        db_label_1 = scelta_tab.comboBox1.currentText()  # Nome della connessione selezionata nella prima picklist
+        db_label_2 = scelta_tab.comboBox2.currentText()  # Nome della connessione selezionata nella seconda picklist
+
+        # Stampa i valori selezionati (opzionale, per debug)
+        print(f"Connessione 1 selezionata: {db_label_1}")
+        print(f"Connessione 2 selezionata: {db_label_2}")
 
         try:
             # Create engines and inspectors only when needed
@@ -276,7 +293,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 inspector_svi = inspect(conn_svi)
                 inspector_col = inspect(conn_col)
 
-                table_diffs, view_diffs, synonym_diffs, sequence_diffs = compare_environments('SVI', oracle_conn_svi, 'COL', oracle_conn_col)
+                table_diffs, view_diffs, synonym_diffs, sequence_diffs = compare_environments(db_label_1, oracle_conn_svi, db_label_2, oracle_conn_col)
 
                 # Generate SQL scripts and Excel report
                 scripts = generate_sql_scripts(table_diffs, view_diffs, synonym_diffs, sequence_diffs)

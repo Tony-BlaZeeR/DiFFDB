@@ -37,7 +37,7 @@
         <string notr="true">font: 75 20pt &quot;MS Serif&quot;;</string>
        </property>
        <property name="text">
-        <string>DiFFDB v1.0</string>
+        <string>DiFFDB v0.1</string>
        </property>
        <property name="alignment">
         <set>Qt::AlignCenter</set>
