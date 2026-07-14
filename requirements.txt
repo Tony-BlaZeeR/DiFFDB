@@ -1,0 +1,17 @@
+openpyxl==3.1.5
+pandas==2.3.1
+PyQt5==5.15.11
+PyQt5-Qt5==5.15.2
+PyQt5_sip==12.17.0
+QtAwesome==1.4.0
+SQLAlchemy==2.0.41
+sqlparse==0.5.3
+
+# Driver: installa solo quelli che ti servono
+psycopg2-binary==2.9.10   # PostgreSQL
+PyMySQL==1.1.1            # MySQL/MariaDB
+pyodbc==5.2.0             # SQL Server
+# cx_Oracle==8.3.0        # Oracle
+
+# Sviluppo
+pytest==8.3.4

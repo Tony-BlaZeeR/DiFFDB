@@ -170,3 +170,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# DiFFDB
+config/DB.txt
+connections.txt
+differenze_ambienti.xlsx
+allinea_*.sql
+script_mancanti.sql
