@@ -33,35 +33,45 @@ query_templates = {
         "add": "ALTER TABLE {table} ADD COLUMN {column} {type};",
         "modify": "ALTER TABLE {table} ALTER COLUMN {column} TYPE {type};",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
-        "create_sequence": "CREATE SEQUENCE {name} START WITH 1 INCREMENT BY 1;",
+        "alter_add_constraint": True,
+        "sequences": True,
+        "alter_sequence": "ALTER SEQUENCE {name} INCREMENT BY {increment} RESTART WITH {start};",
         "create_synonym": None,  # PostgreSQL non ha i sinonimi
     },
     "mysql": {
         "add": "ALTER TABLE {table} ADD COLUMN {column} {type};",
         "modify": "ALTER TABLE {table} MODIFY COLUMN {column} {type};",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
-        "create_sequence": None,  # MySQL non ha le sequenze classiche
+        "alter_add_constraint": True,
+        "sequences": False,  # MySQL non ha le sequenze classiche
+        "alter_sequence": None,
         "create_synonym": None,
     },
     "oracle": {
         "add": "ALTER TABLE {table} ADD {column} {type};",
         "modify": "ALTER TABLE {table} MODIFY {column} {type};",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
-        "create_sequence": "CREATE SEQUENCE {name} START WITH 1 INCREMENT BY 1 NOCACHE;",
+        "alter_add_constraint": True,
+        "sequences": True,
+        "alter_sequence": "ALTER SEQUENCE {name} INCREMENT BY {increment};",
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
     },
     "mssql": {
         "add": "ALTER TABLE {table} ADD {column} {type};",
         "modify": "ALTER TABLE {table} ALTER COLUMN {column} {type};",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
-        "create_sequence": "CREATE SEQUENCE {name} START WITH 1 INCREMENT BY 1;",
+        "alter_add_constraint": True,
+        "sequences": True,
+        "alter_sequence": "ALTER SEQUENCE {name} RESTART WITH {start} INCREMENT BY {increment};",
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
     },
     "sqlite": {
         "add": "ALTER TABLE {table} ADD COLUMN {column} {type};",
         "modify": "-- SQLite non supporta ALTER COLUMN: {table}.{column} ({type}) richiede di ricreare la tabella",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
-        "create_sequence": None,
+        "alter_add_constraint": False,  # SQLite non aggiunge vincoli a tabelle esistenti
+        "sequences": False,
+        "alter_sequence": None,
         "create_synonym": None,
     },
 }

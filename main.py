@@ -1,10 +1,10 @@
 import logging
 import sys
 
-from PyQt5 import QtGui, QtWidgets
-
+import src  # noqa: F401  (fissa il binding Qt prima di qualunque import di qtawesome/qtpy)
 from src.main_window import MainWindow
 from src.paths import resource_path
+from src.qt import QtGui, QtWidgets
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
 
     window = MainWindow()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

@@ -52,12 +52,16 @@ def config_dir() -> Path:
 
 
 def connections_file() -> Path:
-    return config_dir() / "connections.txt"
+    return config_dir() / "connections.json"
 
 
-def legacy_connections_file() -> Path:
-    """Vecchio file dentro al repo: letto una volta sola per migrare le voci."""
-    return Path(resource_path("config", "DB.txt"))
+def legacy_text_files():
+    """Vecchi file in formato testo, letti una volta sola per migrare le voci."""
+    return [
+        config_dir() / "connections.txt",
+        app_dir() / "config" / "DB.txt",
+        Path(resource_path("config", "DB.txt")),
+    ]
 
 
 def _is_writable(path: Path) -> bool:

@@ -1,6 +1,0 @@
-# Esempio di file connessioni. Copialo in connections.txt (gitignorato).
-# Formato: nome,connection_string
-# La password puo arrivare da una variabile ambiente: ${PROD_DB_PWD}
-
-sviluppo,postgresql+psycopg2://app:${SVI_DB_PWD}@localhost:5432/app_svi
-collaudo,postgresql+psycopg2://app:${COL_DB_PWD}@collaudo.local:5432/app_col
