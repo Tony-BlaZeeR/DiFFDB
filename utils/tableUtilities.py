@@ -1,5 +1,10 @@
+"""Confronto di due script DDL testuali (file .sql), senza connessione al DB.
+
+Complementare a src/diff_DB.py, che invece confronta due database vivi.
+"""
+
 import sqlparse
-from config.dialectConfig import query_templates as templates
+from config.dialectConfig import templates_for
 from utils.errorMessages import ErrorMessages, get_error_message
 
 def get_table_name(tokens):
@@ -30,20 +35,20 @@ def parse_ddl(line):
                 is_create_stmt = True
                 continue
             if is_create_stmt and token.value.startswith("("):
+                # Parse nome tabella
                 tablename = get_table_name(tokens[:i])
+                # Parse delle colonne e dei tipi
                 txt = token.value
                 columns_and_types = (
                     get_columns_and_types(txt[1:txt.rfind(")")].split(",\n")))
                 break
     return tablename, columns_and_types
 
-def compare_ddl(old_ddl: str, new_ddl: str, dialect="postgresql"):
+def compare_ddl(old_ddl: str, new_ddl: str, dialect = "postgresql"):
     old_table, old_columns = parse_ddl(old_ddl)
     new_table, new_columns = parse_ddl(new_ddl)
 
-    if dialect not in templates:
-        raise ValueError(get_error_message(ErrorMessages.DIALECT_NOT_SUPPORTED, dialect=dialect))
-    dialect_queries = templates[dialect]
+    dialect_queries = templates_for(dialect)
 
     if old_table != new_table:
         raise ValueError(get_error_message(ErrorMessages.TABLES_NAME_DIFFERENT))
