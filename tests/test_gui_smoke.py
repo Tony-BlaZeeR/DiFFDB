@@ -36,7 +36,7 @@ def window(app, tmp_path, monkeypatch):
 
 def test_la_finestra_ha_i_tre_tab(window):
     titoli = [window.tabWidget.tabText(i) for i in range(window.tabWidget.count())]
-    assert titoli[:3] == ["Home", "Configurazione", "Scelta"]
+    assert titoli[:4] == ["Home", "Configurazione", "Scelta", "Risultati"]
 
 
 def test_i_widget_dei_tab_sono_raggiungibili(window):

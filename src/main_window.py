@@ -6,13 +6,15 @@ from src.connections import load_connections, save_connections
 from src.dialogs import ask_connection
 from src.paths import config_dir, resource_path
 from src.qt import Qt, QtCore, QtGui, QtWidgets, bind_children, load_ui
-from src.report import write_outputs
+from src.report import write_excel, write_sql
+from src.results_tab import ResultsTab
 from src.worker import CompareWorker
 
 logger = logging.getLogger(__name__)
 
 ICON_COLOR = "#A9B7C6"
 TAB_SCELTA = 2
+TAB_RISULTATI = 3
 COL_NAME, COL_STRING, COL_SCHEMA, COL_EDIT, COL_DELETE = range(5)
 
 
@@ -183,9 +185,14 @@ class MainWindow(QtWidgets.QMainWindow):
         tab_config = load_ui(resource_path("ui", "configurazione.ui"))
         tab_scelta = load_ui(resource_path("ui", "scelta.ui"))
 
+        self.results_tab = ResultsTab(
+            on_export_excel=self.export_excel, on_export_sql=self.export_sql)
+
         self.tabWidget.insertTab(0, tab_home, qta.icon("fa5s.home", color=ICON_COLOR), "Home")
         self.tabWidget.insertTab(1, tab_config, qta.icon("fa5s.cog", color=ICON_COLOR), "Configurazione")
         self.tabWidget.insertTab(2, tab_scelta, qta.icon("fa5s.database", color=ICON_COLOR), "Scelta")
+        self.tabWidget.insertTab(3, self.results_tab,
+                                 qta.icon("fa5s.exchange-alt", color=ICON_COLOR), "Risultati")
 
         if tab_home.layout() is None:
             tab_home.setLayout(QtWidgets.QVBoxLayout())
@@ -255,12 +262,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self, "Ambienti uguali", "Seleziona due ambienti diversi da confrontare.")
             return
 
-        output_dir = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Dove salvare report e script", self.output_dir)
-        if not output_dir:
-            return
-        self.output_dir = output_dir
-
         self.scelta_tab().compare_button.setEnabled(False)
         self.status_label.setText("Confronto in corso...")
 
@@ -276,29 +277,57 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_comparison_done(self, diff):
         self.cleanup_thread()
 
+        # I risultati vanno nel tab: l'utente li rivede e decide cosa esportare.
+        self.results_tab.show_result(diff)
+        self.tabWidget.setCurrentIndex(TAB_RISULTATI)
+
         if diff.is_empty:
             self.status_label.setText("Nessuna differenza trovata.")
-            QtWidgets.QMessageBox.information(
-                self, "Confronto completato",
-                f"{diff.snapshot1.env_name} e {diff.snapshot2.env_name} hanno la stessa struttura.")
-            return
-
-        try:
-            written = write_outputs(diff, self.output_dir)
-        except Exception as exc:
-            logger.exception("Scrittura degli output fallita")
-            QtWidgets.QMessageBox.critical(self, "Errore", f"Impossibile scrivere i file: {exc}")
-            return
-
-        self.status_label.setText(f"{len(diff.all)} differenze trovate.")
-        QtWidgets.QMessageBox.information(
-            self, "Confronto completato",
-            f"{len(diff.all)} differenze trovate.\n\nFile generati:\n" + "\n".join(written))
+        else:
+            self.status_label.setText(f"{len(diff.all)} differenze trovate.")
 
     def on_comparison_failed(self, message):
         self.cleanup_thread()
         self.status_label.setText("Confronto fallito.")
         QtWidgets.QMessageBox.critical(self, "Errore di connessione", message)
+
+    # --- export (richiamati dal tab dei risultati) -------------------------
+
+    def _ask_output_dir(self) -> str:
+        return QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Dove salvare i file", self.output_dir)
+
+    def export_excel(self, diff):
+        output_dir = self._ask_output_dir()
+        if not output_dir:
+            return
+        self.output_dir = output_dir
+        try:
+            path = write_excel(diff, output_dir)
+        except Exception as exc:
+            logger.exception("Scrittura Excel fallita")
+            QtWidgets.QMessageBox.critical(self, "Errore", f"Impossibile scrivere il file: {exc}")
+            return
+        QtWidgets.QMessageBox.information(self, "Excel esportato", f"Salvato in:\n{path}")
+
+    def export_sql(self, diff):
+        output_dir = self._ask_output_dir()
+        if not output_dir:
+            return
+        self.output_dir = output_dir
+        try:
+            written = write_sql(diff, output_dir)
+        except Exception as exc:
+            logger.exception("Scrittura SQL fallita")
+            QtWidgets.QMessageBox.critical(self, "Errore", f"Impossibile scrivere i file: {exc}")
+            return
+        if not written:
+            QtWidgets.QMessageBox.information(
+                self, "Niente da generare",
+                "Le differenze selezionate non producono script (es. solo avvisi).")
+            return
+        QtWidgets.QMessageBox.information(
+            self, "SQL esportato", "File generati:\n" + "\n".join(written))
 
     def cleanup_thread(self):
         self.scelta_tab().compare_button.setEnabled(True)

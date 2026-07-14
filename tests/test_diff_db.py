@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, text
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.diff_DB import (  # noqa: E402
+    DEFAULT_MISMATCH,
     DEFINITION_MISMATCH,
     MISSING,
     NULLABILITY_MISMATCH,
@@ -152,6 +153,62 @@ def test_nullability(tmp_path):
     # Un NOT NULL su una tabella gia' popolata puo' fallire: si segnala, non si esegue.
     scripts = generate_sql_scripts(diff, target_env="COL")
     assert all(s.startswith("--") for s in scripts["tables"])
+
+
+def test_default_di_colonna_diverso(tmp_path):
+    """Punto 2: prima confrontavo solo tipo e nullability, non il default."""
+    svi_url = f"sqlite:///{tmp_path / 'a.db'}"
+    col_url = f"sqlite:///{tmp_path / 'b.db'}"
+    _crea(svi_url, ["CREATE TABLE ordini (id INTEGER, stato VARCHAR(10) DEFAULT 'nuovo')"])
+    _crea(col_url, ["CREATE TABLE ordini (id INTEGER, stato VARCHAR(10) DEFAULT 'aperto')"])
+
+    diff = compare_environments("SVI", svi_url, "COL", col_url)
+    default = [d for d in diff.tables if d.change == DEFAULT_MISMATCH]
+    assert len(default) == 1
+    assert default[0].column == "stato"
+    assert "nuovo" in default[0].detail and "aperto" in default[0].detail
+
+
+def test_default_uguale_non_segnalato(tmp_path):
+    """Lo stesso default non deve produrre una differenza fantasma."""
+    svi_url = f"sqlite:///{tmp_path / 'a.db'}"
+    col_url = f"sqlite:///{tmp_path / 'b.db'}"
+    ddl = "CREATE TABLE t (id INTEGER, n INTEGER DEFAULT 0)"
+    _crea(svi_url, [ddl])
+    _crea(col_url, [ddl])
+
+    diff = compare_environments("SVI", svi_url, "COL", col_url)
+    assert not [d for d in diff.tables if d.change == DEFAULT_MISMATCH]
+
+
+def test_corpo_vista_diverso(tmp_path):
+    """Punto 1: due viste con lo stesso nome ma SQL diverso prima passavano inosservate."""
+    svi_url = f"sqlite:///{tmp_path / 'a.db'}"
+    col_url = f"sqlite:///{tmp_path / 'b.db'}"
+    _crea(svi_url, ["CREATE TABLE t (id INTEGER, s VARCHAR(5))",
+                    "CREATE VIEW v AS SELECT id FROM t WHERE s = 'ok'"])
+    _crea(col_url, ["CREATE TABLE t (id INTEGER, s VARCHAR(5))",
+                    "CREATE VIEW v AS SELECT id FROM t WHERE s = 'ko'"])
+
+    diff = compare_environments("SVI", svi_url, "COL", col_url)
+    viste = [d for d in diff.views if d.change == DEFINITION_MISMATCH]
+    assert len(viste) == 1 and viste[0].name == "v"
+
+    # Su SQLite (niente OR REPLACE) l'allineamento e' DROP + CREATE.
+    scripts = generate_sql_scripts(diff, "COL")
+    joined = "\n".join(scripts["views"])
+    assert "DROP VIEW" in joined and "CREATE VIEW" in joined and "'ok'" in joined
+
+
+def test_vista_solo_diversa_nella_formattazione_non_segnalata(tmp_path):
+    """Spazi e maiuscole non devono generare falsi positivi."""
+    svi_url = f"sqlite:///{tmp_path / 'a.db'}"
+    col_url = f"sqlite:///{tmp_path / 'b.db'}"
+    _crea(svi_url, ["CREATE TABLE t (id INTEGER)", "CREATE VIEW v AS SELECT id FROM t"])
+    _crea(col_url, ["CREATE TABLE t (id INTEGER)", "CREATE VIEW v AS  SELECT  id  FROM t"])
+
+    diff = compare_environments("SVI", svi_url, "COL", col_url)
+    assert not [d for d in diff.views if d.change == DEFINITION_MISMATCH]
 
 
 def test_chiave_primaria_diversa(tmp_path):
