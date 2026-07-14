@@ -2,32 +2,33 @@
 
 import logging
 
-from PyQt5.QtCore import QObject, pyqtSignal
-
 from src.diff_DB import compare_environments
+from src.qt import QObject, Signal
 
 logger = logging.getLogger(__name__)
 
 
 class CompareWorker(QObject):
-    progress = pyqtSignal(str)
-    finished = pyqtSignal(object)   # DiffResult
-    failed = pyqtSignal(str)
+    progress = Signal(str)
+    finished = Signal(object)   # DiffResult
+    failed = Signal(str)
 
-    def __init__(self, env1, conn_str1, env2, conn_str2, schema1=None, schema2=None):
+    def __init__(self, conn1, conn2):
         super().__init__()
-        self.env1, self.conn_str1 = env1, conn_str1
-        self.env2, self.conn_str2 = env2, conn_str2
-        self.schema1, self.schema2 = schema1, schema2
+        self.conn1 = conn1      # src.connections.Connection
+        self.conn2 = conn2
 
     def run(self):
         try:
-            self.progress.emit(f"Lettura della struttura di {self.env1} e {self.env2}...")
+            self.progress.emit(
+                f"Lettura della struttura di {self.conn1.name} e {self.conn2.name}..."
+            )
             diff = compare_environments(
-                self.env1, self.conn_str1, self.env2, self.conn_str2,
-                self.schema1, self.schema2,
+                self.conn1.name, self.conn1.conn_string,
+                self.conn2.name, self.conn2.conn_string,
+                self.conn1.schema, self.conn2.schema,
             )
             self.finished.emit(diff)
-        except Exception as exc:  # anche URL malformati, driver mancanti, timeout
+        except Exception as exc:  # URL malformati, driver mancanti, timeout, permessi
             logger.exception("Confronto fallito")
             self.failed.emit(str(exc))

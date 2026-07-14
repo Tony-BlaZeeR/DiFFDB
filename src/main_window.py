@@ -1,32 +1,38 @@
 import logging
-import os
 
 import qtawesome as qta
-from PyQt5 import QtCore, QtGui, QtWidgets, uic
-from PyQt5.QtGui import QPixmap
 
-from src.connections import Connection, load_connections, save_connections
-from src.dialogs import AddConnectionDialog, EditConnectionDialog
-from src.diff_DB import generate_excel_report, generate_sql_scripts, write_sql_script
+from src.connections import load_connections, save_connections
+from src.dialogs import ask_connection
 from src.paths import config_dir, resource_path
+from src.qt import Qt, QtCore, QtGui, QtWidgets, bind_children, load_ui
+from src.report import write_outputs
 from src.worker import CompareWorker
 
 logger = logging.getLogger(__name__)
 
 ICON_COLOR = "#A9B7C6"
 TAB_SCELTA = 2
+COL_NAME, COL_STRING, COL_SCHEMA, COL_EDIT, COL_DELETE = range(5)
 
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
-        super(MainWindow, self).__init__()
+        super().__init__()
 
         self.drag_position = None
         self.connections = []
         self.thread = None
         self.worker = None
+        self.output_dir = str(config_dir())
 
-        uic.loadUi(resource_path("ui", "main_window.ui"), self)
+        self._ui = load_ui(resource_path("ui", "main_window.ui"))
+        self.setCentralWidget(self._ui.centralWidget())
+        bind_children(self.centralWidget(), self)
+        self.setMinimumSize(self._ui.minimumSize())
+        self.setMaximumSize(self._ui.maximumSize())
+        self.resize(self._ui.size())
+
         with open(resource_path("styles", "style.qss"), encoding="utf-8") as qss:
             self.setStyleSheet(qss.read())
 
@@ -37,9 +43,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.create_custom_title_bar()
         self.load_tabs()
 
-        conn_table = self.conn_table()
-        conn_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        conn_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table = self.conn_table()
+        table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
+        table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
 
         self.connections = load_connections()
         self.refresh_conn_table()
@@ -61,82 +67,73 @@ class MainWindow(QtWidgets.QMainWindow):
         """Ricostruisce la tabella dal modello in memoria.
 
         Va rifatta da zero a ogni modifica: i pulsanti riga catturano l'indice,
-        che dopo una cancellazione non corrisponde piu' alla riga giusta.
+        che dopo una cancellazione non corrisponderebbe piu' alla riga giusta.
         """
         table = self.conn_table()
         table.setRowCount(0)
-        if table.columnCount() < 4:
-            table.setColumnCount(4)
-            table.setHorizontalHeaderItem(2, QtWidgets.QTableWidgetItem(""))
-            table.setHorizontalHeaderItem(3, QtWidgets.QTableWidgetItem(""))
+        if table.columnCount() < 5:
+            table.setColumnCount(5)
+        for column, title in ((COL_NAME, "Nome"), (COL_STRING, "Connessione"),
+                              (COL_SCHEMA, "Schema"), (COL_EDIT, ""), (COL_DELETE, "")):
+            table.setHorizontalHeaderItem(column, QtWidgets.QTableWidgetItem(title))
 
         for row, connection in enumerate(self.connections):
             table.insertRow(row)
-            table.setItem(row, 0, QtWidgets.QTableWidgetItem(connection.name))
-            table.setItem(row, 1, QtWidgets.QTableWidgetItem(_mask_password(connection.conn_string)))
+            table.setItem(row, COL_NAME, QtWidgets.QTableWidgetItem(connection.name))
+            table.setItem(row, COL_STRING,
+                          QtWidgets.QTableWidgetItem(mask_password(connection.conn_string)))
+            table.setItem(row, COL_SCHEMA, QtWidgets.QTableWidgetItem(connection.schema or ""))
 
             edit_button = QtWidgets.QPushButton()
             edit_button.setIcon(qta.icon("fa5s.pencil-alt", color=ICON_COLOR))
-            edit_button.clicked.connect(lambda _, r=row: self.open_edit_connection_dialog(r))
-            table.setCellWidget(row, 2, edit_button)
+            edit_button.clicked.connect(lambda _=False, r=row: self.edit_connection(r))
+            table.setCellWidget(row, COL_EDIT, edit_button)
 
             delete_button = QtWidgets.QPushButton()
             delete_button.setIcon(qta.icon("fa5s.trash-alt", color=ICON_COLOR))
-            delete_button.clicked.connect(lambda _, r=row: self.delete_row(r))
-            table.setCellWidget(row, 3, delete_button)
+            delete_button.clicked.connect(lambda _=False, r=row: self.delete_connection(r))
+            table.setCellWidget(row, COL_DELETE, delete_button)
 
-        table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
-        table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(COL_EDIT, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(COL_DELETE, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
 
     def persist(self):
         save_connections(self.connections)
         self.refresh_conn_table()
         self.refresh_comboboxes()
 
-    def delete_row(self, row):
+    def add_connection(self):
+        connection = ask_connection(self)
+        if connection is not None:
+            self.connections.append(connection)
+            self.persist()
+
+    def edit_connection(self, row):
+        if not 0 <= row < len(self.connections):
+            return
+        connection = ask_connection(self, self.connections[row])
+        if connection is not None:
+            self.connections[row] = connection
+            self.persist()
+
+    def delete_connection(self, row):
         if not 0 <= row < len(self.connections):
             return
         name = self.connections[row].name
         confirm = QtWidgets.QMessageBox.question(
             self, "Elimina connessione", f"Eliminare la connessione '{name}'?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
         )
-        if confirm == QtWidgets.QMessageBox.Yes:
+        if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
             del self.connections[row]
-            self.persist()
-
-    def open_add_connection_dialog(self):
-        dialog = AddConnectionDialog(self)
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            name = dialog.conn_name_input.text().strip()
-            conn_string = dialog.conn_string_input.text().strip()
-            if not name or not conn_string:
-                QtWidgets.QMessageBox.warning(self, "Dati mancanti", "Nome e connection string sono obbligatori.")
-                return
-            self.connections.append(Connection(name=name, conn_string=conn_string))
-            self.persist()
-
-    def open_edit_connection_dialog(self, row):
-        if not 0 <= row < len(self.connections):
-            return
-        connection = self.connections[row]
-        dialog = EditConnectionDialog(self)
-        dialog.conn_name_input.setText(connection.name)
-        dialog.conn_string_input.setText(connection.conn_string)
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            name = dialog.conn_name_input.text().strip()
-            conn_string = dialog.conn_string_input.text().strip()
-            if not name or not conn_string:
-                QtWidgets.QMessageBox.warning(self, "Dati mancanti", "Nome e connection string sono obbligatori.")
-                return
-            self.connections[row] = Connection(name=name, conn_string=conn_string)
             self.persist()
 
     # --- barra del titolo --------------------------------------------------
 
     def create_custom_title_bar(self):
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         title_bar = QtWidgets.QWidget(self)
         title_bar.setObjectName("titleBar")
@@ -144,11 +141,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         logo_label = QtWidgets.QLabel(title_bar)
-        logo_label.setPixmap(
-            QPixmap(resource_path("images", "logo.png")).scaled(
-                20, 20, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
-            )
-        )
+        logo_label.setPixmap(_logo(20))
 
         title_label = QtWidgets.QLabel("DiFFDB", title_bar)
         title_label.setObjectName("titleLabel")
@@ -161,9 +154,8 @@ class MainWindow(QtWidgets.QMainWindow):
         close_button.setObjectName("closeButton")
         close_button.clicked.connect(self.close)
 
-        layout.addSpacerItem(
-            QtWidgets.QSpacerItem(20, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
-        )
+        layout.addSpacerItem(QtWidgets.QSpacerItem(
+            20, 20, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum))
         layout.addWidget(logo_label)
         layout.addWidget(title_label)
         layout.addStretch()
@@ -175,21 +167,21 @@ class MainWindow(QtWidgets.QMainWindow):
         title_bar.mouseMoveEvent = self.mouseMoveEvent
 
     def mousePressEvent(self, event):
-        if event.button() == QtCore.Qt.LeftButton:
-            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() == QtCore.Qt.LeftButton and self.drag_position is not None:
-            self.move(event.globalPos() - self.drag_position)
+        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_position is not None:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
             event.accept()
 
     # --- tab ---------------------------------------------------------------
 
     def load_tabs(self):
-        tab_home = uic.loadUi(resource_path("ui", "home.ui"))
-        tab_config = uic.loadUi(resource_path("ui", "configurazione.ui"))
-        tab_scelta = uic.loadUi(resource_path("ui", "scelta.ui"))
+        tab_home = load_ui(resource_path("ui", "home.ui"))
+        tab_config = load_ui(resource_path("ui", "configurazione.ui"))
+        tab_scelta = load_ui(resource_path("ui", "scelta.ui"))
 
         self.tabWidget.insertTab(0, tab_home, qta.icon("fa5s.home", color=ICON_COLOR), "Home")
         self.tabWidget.insertTab(1, tab_config, qta.icon("fa5s.cog", color=ICON_COLOR), "Configurazione")
@@ -198,19 +190,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if tab_home.layout() is None:
             tab_home.setLayout(QtWidgets.QVBoxLayout())
         logo_label = QtWidgets.QLabel(tab_home)
-        logo_label.setPixmap(
-            QPixmap(resource_path("images", "logo.png")).scaled(
-                100, 100, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
-            )
-        )
-        logo_label.setAlignment(QtCore.Qt.AlignCenter)
+        logo_label.setPixmap(_logo(100))
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tab_home.layout().addWidget(logo_label)
 
         self.status_label = QtWidgets.QLabel("", tab_scelta)
-        self.status_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tab_scelta.mainLayout.addWidget(self.status_label)
 
-        tab_config.add_conn_button.clicked.connect(self.open_add_connection_dialog)
+        tab_config.add_conn_button.clicked.connect(self.add_connection)
         tab_scelta.compare_button.clicked.connect(self.start_comparison)
         tab_scelta.comboBox1.currentIndexChanged.connect(self.update_compare_button_text)
         tab_scelta.comboBox2.currentIndexChanged.connect(self.update_compare_button_text)
@@ -223,18 +211,26 @@ class MainWindow(QtWidgets.QMainWindow):
             combo.blockSignals(True)
             combo.clear()
             for connection in self.connections:
-                combo.addItem(connection.name, connection.conn_string)
+                label = connection.name
+                if connection.schema:
+                    label += f" [{connection.schema}]"
+                combo.addItem(label, connection.name)
             index = combo.findText(current)
             if index >= 0:
                 combo.setCurrentIndex(index)
             combo.blockSignals(False)
         self.update_compare_button_text()
 
+    def selected_connections(self):
+        tab = self.scelta_tab()
+        by_name = {c.name: c for c in self.connections}
+        return by_name.get(tab.comboBox1.currentData()), by_name.get(tab.comboBox2.currentData())
+
     def update_compare_button_text(self):
         tab = self.scelta_tab()
-        db1, db2 = tab.comboBox1.currentText(), tab.comboBox2.currentText()
-        if db1 and db2:
-            tab.compare_button.setText(f"Confronta {db1} con {db2}")
+        conn1, conn2 = self.selected_connections()
+        if conn1 and conn2:
+            tab.compare_button.setText(f"Confronta {conn1.name} con {conn2.name}")
         else:
             tab.compare_button.setText("Confronta")
 
@@ -248,34 +244,28 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.thread is not None:
             return  # confronto gia' in corso
 
-        tab = self.scelta_tab()
-        env1, env2 = tab.comboBox1.currentText(), tab.comboBox2.currentText()
-        conn1, conn2 = tab.comboBox1.currentData(), tab.comboBox2.currentData()
-
-        if not conn1 or not conn2:
+        conn1, conn2 = self.selected_connections()
+        if conn1 is None or conn2 is None:
             QtWidgets.QMessageBox.warning(
                 self, "Connessioni mancanti",
-                "Configura almeno due connessioni nella scheda Configurazione.",
-            )
+                "Configura almeno due connessioni nella scheda Configurazione.")
             return
-        if env1 == env2:
+        if conn1.name == conn2.name:
             QtWidgets.QMessageBox.warning(
-                self, "Ambienti uguali", "Seleziona due ambienti diversi da confrontare."
-            )
+                self, "Ambienti uguali", "Seleziona due ambienti diversi da confrontare.")
             return
 
         output_dir = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Dove salvare report e script", str(config_dir())
-        )
+            self, "Dove salvare report e script", self.output_dir)
         if not output_dir:
             return
         self.output_dir = output_dir
 
-        tab.compare_button.setEnabled(False)
+        self.scelta_tab().compare_button.setEnabled(False)
         self.status_label.setText("Confronto in corso...")
 
         self.thread = QtCore.QThread(self)
-        self.worker = CompareWorker(env1, conn1, env2, conn2)
+        self.worker = CompareWorker(conn1, conn2)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.progress.connect(self.status_label.setText)
@@ -290,22 +280,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.status_label.setText("Nessuna differenza trovata.")
             QtWidgets.QMessageBox.information(
                 self, "Confronto completato",
-                f"{diff.snapshot1.env_name} e {diff.snapshot2.env_name} hanno la stessa struttura.",
-            )
+                f"{diff.snapshot1.env_name} e {diff.snapshot2.env_name} hanno la stessa struttura.")
             return
 
         try:
-            excel_path = os.path.join(self.output_dir, "differenze_ambienti.xlsx")
-            generate_excel_report(diff, excel_path)
-
-            written = [excel_path]
-            for target in (diff.snapshot1.env_name, diff.snapshot2.env_name):
-                scripts = generate_sql_scripts(diff, target)
-                if not any(scripts.values()):
-                    continue
-                sql_path = os.path.join(self.output_dir, f"allinea_{_slug(target)}.sql")
-                write_sql_script(scripts, sql_path, target)
-                written.append(sql_path)
+            written = write_outputs(diff, self.output_dir)
         except Exception as exc:
             logger.exception("Scrittura degli output fallita")
             QtWidgets.QMessageBox.critical(self, "Errore", f"Impossibile scrivere i file: {exc}")
@@ -314,8 +293,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_label.setText(f"{len(diff.all)} differenze trovate.")
         QtWidgets.QMessageBox.information(
             self, "Confronto completato",
-            f"{len(diff.all)} differenze trovate.\n\nFile generati:\n" + "\n".join(written),
-        )
+            f"{len(diff.all)} differenze trovate.\n\nFile generati:\n" + "\n".join(written))
 
     def on_comparison_failed(self, message):
         self.cleanup_thread()
@@ -331,8 +309,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.worker = None
 
 
-def _mask_password(conn_string: str) -> str:
-    """Nasconde la password nella tabella a video (resta in chiaro nel file)."""
+def mask_password(conn_string: str) -> str:
+    """Nasconde la password nella tabella a video (nel file resta come l'hai scritta)."""
     if "://" not in conn_string or "@" not in conn_string:
         return conn_string
     scheme, rest = conn_string.split("://", 1)
@@ -343,15 +321,20 @@ def _mask_password(conn_string: str) -> str:
     return f"{scheme}://{user}:****@{host}"
 
 
-def _slug(text: str) -> str:
-    return "".join(c if c.isalnum() else "_" for c in text).strip("_").lower() or "target"
+def _logo(size: int) -> QtGui.QPixmap:
+    return QtGui.QPixmap(resource_path("images", "logo.png")).scaled(
+        size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
 
 def _set_windows_taskbar_identity():
-    """Icona corretta nella taskbar di Windows. Su Linux/macOS non serve."""
-    try:
-        from PyQt5.QtWinExtras import QtWin
+    """Icona corretta nella taskbar di Windows. Su Linux e macOS non serve."""
+    import sys
 
-        QtWin.setCurrentProcessExplicitAppUserModelID("diffdb.app.1.0")
-    except ImportError:
-        pass
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("diffdb.app.1.0")
+    except Exception as exc:  # pragma: no cover - dipende dalla versione di Windows
+        logger.debug("AppUserModelID non impostato: %s", exc)

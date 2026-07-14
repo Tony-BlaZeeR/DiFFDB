@@ -24,6 +24,16 @@
     <widget class="QLineEdit" name="conn_string_input"/>
    </item>
    <item>
+    <widget class="QLabel" name="label_schema">
+     <property name="text">
+      <string>Schema (opzionale - su Oracle di solito coincide con l'utente)</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLineEdit" name="schema_input"/>
+   </item>
+   <item>
     <widget class="QPushButton" name="add_button">
      <property name="text">
       <string>Aggiungi</string>

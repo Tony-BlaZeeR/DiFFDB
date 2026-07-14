@@ -1,0 +1,12 @@
+[
+  {
+    "name": "sviluppo",
+    "conn_string": "postgresql+psycopg2://app:${SVI_DB_PWD}@localhost:5432/app_svi",
+    "schema": null
+  },
+  {
+    "name": "collaudo",
+    "conn_string": "oracle+oracledb://app:${COL_DB_PWD}@collaudo.local:1521/?service_name=ORCL",
+    "schema": "APP"
+  }
+]

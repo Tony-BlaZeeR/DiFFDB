@@ -1,25 +1,29 @@
 # DiFFDB
 
 Confronta la **struttura** di due database che dovrebbero avere lo stesso schema
-(sviluppo, collaudo, produzione), evidenzia le differenze e genera lo script SQL
-per allinearli.
+(sviluppo, collaudo, produzione), mostra le differenze e genera lo script SQL per
+allinearli. Con interfaccia grafica e con una CLI da mettere in pipeline.
 
 ## Cosa rileva
 
 - Tabelle presenti in un ambiente e non nell'altro
 - Colonne mancanti, **con tipo diverso** o con nullability diversa
-- Viste, sequenze e sinonimi (Oracle e SQL Server) mancanti
+- **Indici, foreign key, vincoli di unicita' e chiavi primarie**
+- Viste, sequenze (con i loro valori reali di START/INCREMENT) e sinonimi
+  (Oracle e SQL Server)
 
 ## Cosa produce
 
-- `differenze_ambienti.xlsx` — un foglio per tabelle, viste, sequenze, sinonimi.
-  Ogni riga dice *cosa* differisce, in *quale* ambiente manca e con che *dettaglio*.
+- `differenze_ambienti.xlsx` — un foglio per tabelle, vincoli, viste, sequenze,
+  sinonimi. Ogni riga dice *cosa* differisce, *dove* manca e con che *dettaglio*.
 - `allinea_<ambiente>.sql` — uno script **per ogni direzione**, con SQL eseguibile
-  (CREATE TABLE con colonne e tipi reali, ALTER TABLE, CREATE VIEW), compilato sul
-  dialetto dell'ambiente da allineare.
+  (CREATE TABLE con colonne, tipi e FK; ALTER TABLE; CREATE INDEX; ADD CONSTRAINT;
+  CREATE VIEW; CREATE SEQUENCE), compilato sul dialetto dell'ambiente da allineare.
 
-Gli script vanno riletti prima di essere eseguiti in produzione: DiFFDB propone,
-non applica. Nessuno statement viene mai eseguito sui database confrontati.
+DiFFDB propone, non applica: non esegue mai niente sui database confrontati. Le
+operazioni distruttive o rischiose (cambio di chiave primaria, NOT NULL su tabelle
+popolate, vincoli su dialetti che non li sanno aggiungere in ALTER) non vengono
+generate come SQL, ma segnalate come commento nello script.
 
 ## Database supportati
 
@@ -27,7 +31,7 @@ PostgreSQL, MySQL/MariaDB, Oracle, SQL Server, SQLite — tramite SQLAlchemy.
 
 ## Installazione
 
-Serve Python 3.8+.
+Serve Python 3.10+.
 
 ```sh
 python -m venv .venv
@@ -36,38 +40,54 @@ pip install -r requirements.txt
 python main.py
 ```
 
-In `requirements.txt` i driver dei database sono opzionali: installa solo quelli
-che ti servono (Oracle richiede `cx_Oracle` e il client Oracle sulla macchina).
+I driver sono scelti per non richiedere client di sistema: `oracledb` gira in
+*thin mode* (niente Oracle Instant Client da installare) e `psycopg2-binary` e
+`PyMySQL` non hanno dipendenze native. Per SQL Server, `pymssql` si porta dietro
+il client; `pyodbc` (commentato in `requirements.txt`) richiede invece l'ODBC
+Driver installato sulla macchina.
 
 ## Connessioni
 
-Si gestiscono dalla scheda **Configurazione**. Vengono salvate in `connections.txt`
+Si gestiscono dalla scheda **Configurazione** e finiscono in `connections.json`,
 accanto all'eseguibile (o in `%APPDATA%\DiFFDB` se la cartella non e' scrivibile).
-Il file **non e' versionato**: parti da `connections.txt.example`.
+Il file **non e' versionato**: parti da `connections.json.example`.
 
-Formato, una connessione per riga:
-
-```
-sviluppo,postgresql+psycopg2://app:password@localhost:5432/app_svi
-```
-
-Per non tenere le password in chiaro, usa una variabile d'ambiente: DiFFDB la
-espande al momento della connessione.
-
-```
-produzione,postgresql+psycopg2://app:${PROD_DB_PWD}@prod.local:5432/app
+```json
+[
+  {
+    "name": "collaudo",
+    "conn_string": "oracle+oracledb://app:${COL_DB_PWD}@host:1521/?service_name=ORCL",
+    "schema": "APP"
+  }
+]
 ```
 
-Con la variabile `DIFFDB_HOME` puoi spostare la configurazione altrove.
+Lo **schema** e' opzionale: su Oracle di solito coincide con l'utente, e serve
+quando l'utente di connessione vede piu' schemi. Le password non vanno scritte in
+chiaro: `${VAR}` viene espansa dall'ambiente al momento della connessione.
 
-## Uso
+Con `DIFFDB_HOME` puoi spostare la configurazione dove vuoi.
 
-1. **Configurazione** — aggiungi le connessioni.
+## Uso (GUI)
+
+1. **Configurazione** — aggiungi le connessioni (nome, URL, schema).
 2. **Scelta** — seleziona i due ambienti e premi *Confronta*.
 3. Scegli la cartella di output: ci trovi il report Excel e gli script SQL.
 
 Il confronto gira su un thread separato: la finestra resta reattiva anche su
 schemi grandi.
+
+## Uso (CLI, per la pipeline)
+
+```sh
+python -m src.cli --list                                  # connessioni configurate
+python -m src.cli SVI COL --out ./report                  # confronta e scrive gli output
+python -m src.cli SVI COL --fail-on-diff                  # esce con 1 se divergono
+python -m src.cli sqlite:///a.db sqlite:///b.db           # anche due URL al volo
+```
+
+`--fail-on-diff` e' quello che serve in CI: fa fallire la build se collaudo e
+produzione hanno smesso di somigliarsi.
 
 ## Build (eseguibile portable)
 
@@ -76,8 +96,10 @@ pip install -r requirements-dev.txt
 pyinstaller DiFFDB.spec
 ```
 
-Il risultato e' un eseguibile unico in `dist/`, che non richiede installazione
-ne' Python: lo copi dove vuoi insieme al suo `connections.txt`.
+Un eseguibile unico in `dist/`, senza installazione e senza Python: lo copi dove
+vuoi insieme al suo `connections.json`. PyInstaller non fa cross-compile: l'exe
+Windows si costruisce su Windows, il binario Linux su Linux — la pipeline in
+`.github/workflows/ci.yml` li produce per tutti e tre i sistemi a ogni tag.
 
 Per l'icona su Windows serve un `.ico` (opzionale):
 
@@ -92,24 +114,31 @@ python -m pytest tests/
 ```
 
 I test creano due database SQLite reali, li confrontano, **eseguono** lo script
-generato e verificano che le differenze siano sparite.
+generato e verificano che le differenze siano sparite. La finestra viene
+istanziata headless (`QT_QPA_PLATFORM=offscreen`), quindi anche la GUI e' coperta.
+
+Limite noto: su SQLite, SQLAlchemy non riflette l'`UNIQUE` dichiarato inline sulla
+colonna (solo quello a livello di tabella). Sugli altri database non succede.
 
 ## Struttura
 
 | Percorso | Contenuto |
 | --- | --- |
-| `main.py` | Avvio dell'applicazione |
+| `main.py` | Avvio della GUI |
+| `src/cli.py` | Interfaccia a riga di comando |
 | `src/main_window.py` | Finestra principale, tab, gestione connessioni |
-| `src/diff_DB.py` | Confronto e generazione di script SQL ed Excel |
+| `src/diff_DB.py` | Confronto e generazione degli script SQL |
 | `src/schema_snapshot.py` | Lettura della struttura di un database |
+| `src/report.py` | Scrittura di Excel e script (usata da GUI e CLI) |
 | `src/worker.py` | Confronto fuori dal thread della GUI |
+| `src/qt.py` | Unico punto di accesso a Qt e caricamento dei file `.ui` |
 | `src/connections.py`, `src/paths.py` | Connessioni e percorsi (anche da eseguibile) |
-| `config/dialectConfig.py` | Template SQL per dialetto |
+| `config/dialectConfig.py` | Template SQL e capacita' di ogni dialetto |
 | `utils/tableUtilities.py` | Confronto di due file DDL testuali (utility a se') |
 | `ui/`, `styles/`, `images/` | Layout Qt Designer, tema scuro, icone |
 
 ## Licenza
 
-MIT (vedi `LICENSE`). Nota: PyQt5 e' distribuito con licenza GPL/commerciale; per
-distribuire l'applicazione con licenza permissiva conviene passare a PySide6
-(LGPL), che ha praticamente la stessa API.
+MIT (vedi `LICENSE`). La GUI usa **PySide6** (LGPL), non PyQt5: quest'ultimo e'
+GPL/commerciale e distribuire l'eseguibile avrebbe richiesto di rilasciare tutto
+sotto GPL o di comprare una licenza.
