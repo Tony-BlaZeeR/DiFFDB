@@ -1,148 +1,138 @@
-import os
-import sys
 import logging
-from PyQt5 import QtWidgets, uic, QtCore, QtGui
-from PyQt5.QtGui import QPixmap
-import qtawesome as qta
-from sqlalchemy import create_engine, inspect
-import sqlalchemy.exc
-from PyQt5.QtWinExtras import QtWin
+import os
 
-from config.appConfig import AppConfig, get_config
-from src.dialogs import AddConnectionDialog, EditConnectionDialog  # Corrected import path
-#from utils import compare_environments, generate_sql_scripts, generate_excel_report
-from diff_DB import compare_environments, generate_sql_scripts, generate_excel_report
+import qtawesome as qta
+from PyQt5 import QtCore, QtGui, QtWidgets, uic
+from PyQt5.QtGui import QPixmap
+
+from src.connections import Connection, load_connections, save_connections
+from src.dialogs import AddConnectionDialog, EditConnectionDialog
+from src.diff_DB import generate_excel_report, generate_sql_scripts, write_sql_script
+from src.paths import config_dir, resource_path
+from src.worker import CompareWorker
+
+logger = logging.getLogger(__name__)
+
+ICON_COLOR = "#A9B7C6"
+TAB_SCELTA = 2
+
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
-        
-        # Inizializza drag_position
+
         self.drag_position = None
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-        ui_path = os.path.join(os.path.dirname(__file__), '..', 'ui', 'main_window.ui')
-        print(f"UI Path: {ui_path}")  # Print the UI path for debugging
-        if not os.path.exists(ui_path):
-            raise FileNotFoundError(f"The UI file was not found: {ui_path}")
-        uic.loadUi(ui_path, self)
-        self.setStyleSheet(open(os.path.join(os.path.dirname(__file__), '..', 'styles', 'style.qss')).read())
+        self.connections = []
+        self.thread = None
+        self.worker = None
 
-        # Set application name and design for Windows taskbar
+        uic.loadUi(resource_path("ui", "main_window.ui"), self)
+        with open(resource_path("styles", "style.qss"), encoding="utf-8") as qss:
+            self.setStyleSheet(qss.read())
+
         self.setWindowTitle("DiFFDB")
-        app_id = 'mycompany.diffdb.1.0'
-        QtWin.setCurrentProcessExplicitAppUserModelID(app_id)
+        self.setWindowIcon(QtGui.QIcon(resource_path("images", "logo.png")))
+        _set_windows_taskbar_identity()
 
-        # Set window icon
-        icon_path = os.path.join(os.path.dirname(__file__), '..', 'images', 'logo.png')
-        self.setWindowIcon(QtGui.QIcon(icon_path))
-
-        # Create custom title bar
         self.create_custom_title_bar()
-
-        # Load tabs
         self.load_tabs()
-        
-        # Set column widths for conn_table
-        self.tabWidget.widget(1).conn_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        self.tabWidget.widget(1).conn_table.setColumnWidth(0, int(self.tabWidget.widget(1).conn_table.width() * 0.3))
-        self.tabWidget.widget(1).conn_table.setColumnWidth(1, int(self.tabWidget.widget(1).conn_table.width() * 0.7))
 
-        # Add edit buttons to conn_table
-        self.add_edit_buttons()
-
-        # Load connections from file
-        self.load_connections_from_file()
-
-        # Connect tab change signal to function
-        self.tabWidget.currentChanged.connect(self.on_tab_changed)
-
-    def add_edit_buttons(self):
-        conn_table = self.tabWidget.widget(1).conn_table
-        row_count = conn_table.rowCount()
-        column_count = conn_table.columnCount()
-
-        # Ensure there is a column for the edit buttons
-        if column_count < 4:
-            conn_table.setColumnCount(4)
-            conn_table.setHorizontalHeaderItem(2, QtWidgets.QTableWidgetItem(""))
-            conn_table.setHorizontalHeaderItem(3, QtWidgets.QTableWidgetItem(""))
-
-        icon_color = '#A9B7C6'  # Colore del testo
-
-        for row in range(row_count):
-            edit_button = QtWidgets.QPushButton()
-            edit_button.setIcon(qta.icon('fa5s.pencil-alt', color=icon_color))
-            edit_button.clicked.connect(lambda _, r=row: self.open_edit_connection_dialog(r))
-            conn_table.setCellWidget(row, 2, edit_button)
-
-            delete_button = QtWidgets.QPushButton()
-            delete_button.setIcon(qta.icon('fa5s.trash-alt', color=icon_color))
-            delete_button.clicked.connect(lambda _, r=row: self.delete_row(r))
-            conn_table.setCellWidget(row, 3, delete_button)
-
-        # Set column resize mode to fit contents
-        conn_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
-        conn_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
-
-        # Disable default cell editing
+        conn_table = self.conn_table()
+        conn_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         conn_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
-    def edit_row(self, row, conn_name, conn_string):
-        self.tabWidget.widget(1).conn_table.setItem(row, 0, QtWidgets.QTableWidgetItem(conn_name))
-        self.tabWidget.widget(1).conn_table.setItem(row, 1, QtWidgets.QTableWidgetItem(conn_string))
-        self.save_connections_to_file()
+        self.connections = load_connections()
+        self.refresh_conn_table()
+        self.refresh_comboboxes()
+
+        self.tabWidget.currentChanged.connect(self.on_tab_changed)
+
+    # --- accesso ai tab ---------------------------------------------------
+
+    def conn_table(self):
+        return self.tabWidget.widget(1).conn_table
+
+    def scelta_tab(self):
+        return self.tabWidget.widget(TAB_SCELTA)
+
+    # --- gestione connessioni ---------------------------------------------
+
+    def refresh_conn_table(self):
+        """Ricostruisce la tabella dal modello in memoria.
+
+        Va rifatta da zero a ogni modifica: i pulsanti riga catturano l'indice,
+        che dopo una cancellazione non corrisponde piu' alla riga giusta.
+        """
+        table = self.conn_table()
+        table.setRowCount(0)
+        if table.columnCount() < 4:
+            table.setColumnCount(4)
+            table.setHorizontalHeaderItem(2, QtWidgets.QTableWidgetItem(""))
+            table.setHorizontalHeaderItem(3, QtWidgets.QTableWidgetItem(""))
+
+        for row, connection in enumerate(self.connections):
+            table.insertRow(row)
+            table.setItem(row, 0, QtWidgets.QTableWidgetItem(connection.name))
+            table.setItem(row, 1, QtWidgets.QTableWidgetItem(_mask_password(connection.conn_string)))
+
+            edit_button = QtWidgets.QPushButton()
+            edit_button.setIcon(qta.icon("fa5s.pencil-alt", color=ICON_COLOR))
+            edit_button.clicked.connect(lambda _, r=row: self.open_edit_connection_dialog(r))
+            table.setCellWidget(row, 2, edit_button)
+
+            delete_button = QtWidgets.QPushButton()
+            delete_button.setIcon(qta.icon("fa5s.trash-alt", color=ICON_COLOR))
+            delete_button.clicked.connect(lambda _, r=row: self.delete_row(r))
+            table.setCellWidget(row, 3, delete_button)
+
+        table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+
+    def persist(self):
+        save_connections(self.connections)
+        self.refresh_conn_table()
+        self.refresh_comboboxes()
 
     def delete_row(self, row):
-        conn_table = self.tabWidget.widget(1).conn_table
-        conn_table.removeRow(row)
-        self.save_connections_to_file()
+        if not 0 <= row < len(self.connections):
+            return
+        name = self.connections[row].name
+        confirm = QtWidgets.QMessageBox.question(
+            self, "Elimina connessione", f"Eliminare la connessione '{name}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+        if confirm == QtWidgets.QMessageBox.Yes:
+            del self.connections[row]
+            self.persist()
 
     def open_add_connection_dialog(self):
         dialog = AddConnectionDialog(self)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            conn_name = dialog.conn_name_input.text()
-            conn_string = dialog.conn_string_input.text()
-            row_position = self.tabWidget.widget(1).conn_table.rowCount()
-            self.tabWidget.widget(1).conn_table.insertRow(row_position)
-            self.tabWidget.widget(1).conn_table.setItem(row_position, 0, QtWidgets.QTableWidgetItem(conn_name))
-            self.tabWidget.widget(1).conn_table.setItem(row_position, 1, QtWidgets.QTableWidgetItem(conn_string))
-            self.add_edit_buttons()
-            self.save_connections_to_file()
+            name = dialog.conn_name_input.text().strip()
+            conn_string = dialog.conn_string_input.text().strip()
+            if not name or not conn_string:
+                QtWidgets.QMessageBox.warning(self, "Dati mancanti", "Nome e connection string sono obbligatori.")
+                return
+            self.connections.append(Connection(name=name, conn_string=conn_string))
+            self.persist()
 
     def open_edit_connection_dialog(self, row):
+        if not 0 <= row < len(self.connections):
+            return
+        connection = self.connections[row]
         dialog = EditConnectionDialog(self)
-        conn_name = self.tabWidget.widget(1).conn_table.item(row, 0).text()
-        conn_string = self.tabWidget.widget(1).conn_table.item(row, 1).text()
-        dialog.conn_name_input.setText(conn_name)
-        dialog.conn_string_input.setText(conn_string)
+        dialog.conn_name_input.setText(connection.name)
+        dialog.conn_string_input.setText(connection.conn_string)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            new_conn_name = dialog.conn_name_input.text()
-            new_conn_string = dialog.conn_string_input.text()
-            self.edit_row(row, new_conn_name, new_conn_string)
+            name = dialog.conn_name_input.text().strip()
+            conn_string = dialog.conn_string_input.text().strip()
+            if not name or not conn_string:
+                QtWidgets.QMessageBox.warning(self, "Dati mancanti", "Nome e connection string sono obbligatori.")
+                return
+            self.connections[row] = Connection(name=name, conn_string=conn_string)
+            self.persist()
 
-    def save_connections_to_file(self):
-        conn_table = self.tabWidget.widget(1).conn_table
-        row_count = conn_table.rowCount()
-        connections = []
-        for row in range(row_count):
-            conn_name = conn_table.item(row, 0).text()
-            conn_string = conn_table.item(row, 1).text()
-            connections.append(f"{conn_name},{conn_string}")
-        with open(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt'), 'w') as file:
-            file.write("\n".join(connections))
-
-    def load_connections_from_file(self):
-        conn_table = self.tabWidget.widget(1).conn_table
-        if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt')):
-            with open(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt'), 'r') as file:
-                connections = file.readlines()
-                for connection in connections:
-                    conn_name, conn_string = connection.strip().split(',')
-                    row_position = conn_table.rowCount()
-                    conn_table.insertRow(row_position)
-                    conn_table.setItem(row_position, 0, QtWidgets.QTableWidgetItem(conn_name))
-                    conn_table.setItem(row_position, 1, QtWidgets.QTableWidgetItem(conn_string))
-            self.add_edit_buttons()
+    # --- barra del titolo --------------------------------------------------
 
     def create_custom_title_bar(self):
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
@@ -150,18 +140,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         title_bar = QtWidgets.QWidget(self)
         title_bar.setObjectName("titleBar")
-        title_bar_layout = QtWidgets.QHBoxLayout(title_bar)
-        title_bar_layout.setContentsMargins(0, 0, 0, 0)
+        layout = QtWidgets.QHBoxLayout(title_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # Add spacer to the left of the logo
-        left_spacer = QtWidgets.QSpacerItem(20, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
-        title_bar_layout.addItem(left_spacer)
-
-        # Add logo to title bar
         logo_label = QtWidgets.QLabel(title_bar)
-        logo_pixmap = QPixmap(os.path.join(os.path.dirname(__file__), '..', 'images', 'logo.png')).scaled(20, 20, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        logo_label.setPixmap(logo_pixmap)
-        title_bar_layout.addWidget(logo_label)
+        logo_label.setPixmap(
+            QPixmap(resource_path("images", "logo.png")).scaled(
+                20, 20, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+            )
+        )
 
         title_label = QtWidgets.QLabel("DiFFDB", title_bar)
         title_label.setObjectName("titleLabel")
@@ -174,137 +161,197 @@ class MainWindow(QtWidgets.QMainWindow):
         close_button.setObjectName("closeButton")
         close_button.clicked.connect(self.close)
 
-        title_bar_layout.addWidget(title_label)
-        title_bar_layout.addStretch()
-        title_bar_layout.addWidget(minimize_button)
-        title_bar_layout.addWidget(close_button)
+        layout.addSpacerItem(
+            QtWidgets.QSpacerItem(20, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        )
+        layout.addWidget(logo_label)
+        layout.addWidget(title_label)
+        layout.addStretch()
+        layout.addWidget(minimize_button)
+        layout.addWidget(close_button)
 
         self.setMenuWidget(title_bar)
-
-        # Enable window dragging
         title_bar.mousePressEvent = self.mousePressEvent
         title_bar.mouseMoveEvent = self.mouseMoveEvent
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
-            # Store the position of the mouse relative to the top-left corner of the window
             self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
         if event.buttons() == QtCore.Qt.LeftButton and self.drag_position is not None:
-            # Move the window based on the mouse's current position
             self.move(event.globalPos() - self.drag_position)
             event.accept()
 
+    # --- tab ---------------------------------------------------------------
+
     def load_tabs(self):
-        home_path = os.path.join(os.path.dirname(__file__), '..', 'ui', 'home.ui')
-        configurazione_path = os.path.join(os.path.dirname(__file__), '..', 'ui', 'configurazione.ui')
-        scelta_path = os.path.join(os.path.dirname(__file__), '..', 'ui', 'scelta.ui')
+        tab_home = uic.loadUi(resource_path("ui", "home.ui"))
+        tab_config = uic.loadUi(resource_path("ui", "configurazione.ui"))
+        tab_scelta = uic.loadUi(resource_path("ui", "scelta.ui"))
 
-        tab1 = uic.loadUi(home_path)
-        tab2 = uic.loadUi(configurazione_path)
-        if os.path.exists(scelta_path):
-            tab3 = uic.loadUi(scelta_path)
-        else:
-            raise FileNotFoundError(f"The UI file was not found: {scelta_path}")
+        self.tabWidget.insertTab(0, tab_home, qta.icon("fa5s.home", color=ICON_COLOR), "Home")
+        self.tabWidget.insertTab(1, tab_config, qta.icon("fa5s.cog", color=ICON_COLOR), "Configurazione")
+        self.tabWidget.insertTab(2, tab_scelta, qta.icon("fa5s.database", color=ICON_COLOR), "Scelta")
 
-        icon_color = '#A9B7C6'  # Colore del testo
-
-        self.tabWidget.insertTab(0, tab1, qta.icon('fa5s.home', color=icon_color), "Home")
-        self.tabWidget.insertTab(1, tab2, qta.icon('fa5s.cog', color=icon_color), "Configurazione")
-        self.tabWidget.insertTab(2, tab3, qta.icon('fa5s.database', color=icon_color), "Scelta")
-
-        # Ensure tab1 has a layout
-        if tab1.layout() is None:
-            tab1.setLayout(QtWidgets.QVBoxLayout())
-
-        # Set logo in Home tab
-        logo_label = QtWidgets.QLabel(tab1)
-        logo_pixmap = QPixmap(os.path.join(os.path.dirname(__file__), '..', 'images', 'logo.png')).scaled(100, 100, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        logo_label.setPixmap(logo_pixmap)
+        if tab_home.layout() is None:
+            tab_home.setLayout(QtWidgets.QVBoxLayout())
+        logo_label = QtWidgets.QLabel(tab_home)
+        logo_label.setPixmap(
+            QPixmap(resource_path("images", "logo.png")).scaled(
+                100, 100, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+            )
+        )
         logo_label.setAlignment(QtCore.Qt.AlignCenter)
-        tab1.layout().addWidget(logo_label)
+        tab_home.layout().addWidget(logo_label)
 
-        # Connect buttons to functions
-        tab2.add_conn_button.clicked.connect(self.open_add_connection_dialog)
-        tab3.compare_button.clicked.connect(self.compare_environments)
+        self.status_label = QtWidgets.QLabel("", tab_scelta)
+        self.status_label.setAlignment(QtCore.Qt.AlignCenter)
+        tab_scelta.mainLayout.addWidget(self.status_label)
 
-        # Connect combo boxes to the update function
-        tab3.comboBox1.currentIndexChanged.connect(self.update_compare_button_text)
-        tab3.comboBox2.currentIndexChanged.connect(self.update_compare_button_text)
-        
-        # Initial update of the button text
+        tab_config.add_conn_button.clicked.connect(self.open_add_connection_dialog)
+        tab_scelta.compare_button.clicked.connect(self.start_comparison)
+        tab_scelta.comboBox1.currentIndexChanged.connect(self.update_compare_button_text)
+        tab_scelta.comboBox2.currentIndexChanged.connect(self.update_compare_button_text)
         self.update_compare_button_text()
 
-        # Load connections into combo boxes
-        self.load_connections_into_comboboxes(tab3)
-
-    def load_connections_into_comboboxes(self, tab):
-        tab.comboBox1.clear()
-        tab.comboBox2.clear()
-        if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt')):
-            with open(os.path.join(os.path.dirname(__file__), '..', 'config', 'DB.txt'), 'r') as file:
-                connections = file.readlines()
-                for connection in connections:
-                    conn_name, conn_string = connection.strip().split(',')
-                    tab.comboBox1.addItem(conn_name, conn_string)
-                    tab.comboBox2.addItem(conn_name, conn_string)
+    def refresh_comboboxes(self):
+        tab = self.scelta_tab()
+        for combo in (tab.comboBox1, tab.comboBox2):
+            current = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            for connection in self.connections:
+                combo.addItem(connection.name, connection.conn_string)
+            index = combo.findText(current)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+        self.update_compare_button_text()
 
     def update_compare_button_text(self):
-        tab3 = self.tabWidget.widget(2)  # Assuming "Scelta" is the third tab (index 2)
-        db1 = tab3.comboBox1.currentText()
-        db2 = tab3.comboBox2.currentText()
-        tab3.compare_button.setText(f"Compare {db1} vs {db2}")
+        tab = self.scelta_tab()
+        db1, db2 = tab.comboBox1.currentText(), tab.comboBox2.currentText()
+        if db1 and db2:
+            tab.compare_button.setText(f"Confronta {db1} con {db2}")
+        else:
+            tab.compare_button.setText("Confronta")
 
     def on_tab_changed(self, index):
-        # Refresh connections when switching to the "Scelta" tab
-        if index == 2:  # Assuming "Scelta" is the third tab (index 2)
-            self.load_connections_into_comboboxes(self.tabWidget.widget(2))
+        if index == TAB_SCELTA:
+            self.refresh_comboboxes()
 
-    #def compare_svi_col(self):
-        #self.compare_environments('SVI', 'COL')
+    # --- confronto ---------------------------------------------------------
 
-    #def compare_col_pre(self):
-        #self.compare_environments('COL', 'PRE')
+    def start_comparison(self):
+        if self.thread is not None:
+            return  # confronto gia' in corso
 
-    #def compare_svi_pre(self):
-        #self.compare_environments('SVI', 'PRE')
-    
-    def compare_environments(self):
-        # Get connection strings from combo boxes
-        oracle_conn_svi = self.tabWidget.widget(2).comboBox1.currentData()
-        oracle_conn_col = self.tabWidget.widget(2).comboBox2.currentData()
-        
-        # Accedi al tab "Scelta"
-        scelta_tab = self.tabWidget.widget(2)  # Assumendo che "Scelta" sia il terzo tab (indice 2)
+        tab = self.scelta_tab()
+        env1, env2 = tab.comboBox1.currentText(), tab.comboBox2.currentText()
+        conn1, conn2 = tab.comboBox1.currentData(), tab.comboBox2.currentData()
 
-        # Recupera i valori selezionati nei QComboBox
-        db_label_1 = scelta_tab.comboBox1.currentText()  # Nome della connessione selezionata nella prima picklist
-        db_label_2 = scelta_tab.comboBox2.currentText()  # Nome della connessione selezionata nella seconda picklist
+        if not conn1 or not conn2:
+            QtWidgets.QMessageBox.warning(
+                self, "Connessioni mancanti",
+                "Configura almeno due connessioni nella scheda Configurazione.",
+            )
+            return
+        if env1 == env2:
+            QtWidgets.QMessageBox.warning(
+                self, "Ambienti uguali", "Seleziona due ambienti diversi da confrontare."
+            )
+            return
 
-        # Stampa i valori selezionati (opzionale, per debug)
-        print(f"Connessione 1 selezionata: {db_label_1}")
-        print(f"Connessione 2 selezionata: {db_label_2}")
+        output_dir = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Dove salvare report e script", str(config_dir())
+        )
+        if not output_dir:
+            return
+        self.output_dir = output_dir
+
+        tab.compare_button.setEnabled(False)
+        self.status_label.setText("Confronto in corso...")
+
+        self.thread = QtCore.QThread(self)
+        self.worker = CompareWorker(env1, conn1, env2, conn2)
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.worker.progress.connect(self.status_label.setText)
+        self.worker.finished.connect(self.on_comparison_done)
+        self.worker.failed.connect(self.on_comparison_failed)
+        self.thread.start()
+
+    def on_comparison_done(self, diff):
+        self.cleanup_thread()
+
+        if diff.is_empty:
+            self.status_label.setText("Nessuna differenza trovata.")
+            QtWidgets.QMessageBox.information(
+                self, "Confronto completato",
+                f"{diff.snapshot1.env_name} e {diff.snapshot2.env_name} hanno la stessa struttura.",
+            )
+            return
 
         try:
-            # Create engines and inspectors only when needed
-            with create_engine(oracle_conn_svi).connect() as conn_svi, create_engine(oracle_conn_col).connect() as conn_col:
-                inspector_svi = inspect(conn_svi)
-                inspector_col = inspect(conn_col)
+            excel_path = os.path.join(self.output_dir, "differenze_ambienti.xlsx")
+            generate_excel_report(diff, excel_path)
 
-                table_diffs, view_diffs, synonym_diffs, sequence_diffs = compare_environments(db_label_1, oracle_conn_svi, db_label_2, oracle_conn_col)
+            written = [excel_path]
+            for target in (diff.snapshot1.env_name, diff.snapshot2.env_name):
+                scripts = generate_sql_scripts(diff, target)
+                if not any(scripts.values()):
+                    continue
+                sql_path = os.path.join(self.output_dir, f"allinea_{_slug(target)}.sql")
+                write_sql_script(scripts, sql_path, target)
+                written.append(sql_path)
+        except Exception as exc:
+            logger.exception("Scrittura degli output fallita")
+            QtWidgets.QMessageBox.critical(self, "Errore", f"Impossibile scrivere i file: {exc}")
+            return
 
-                # Generate SQL scripts and Excel report
-                scripts = generate_sql_scripts(table_diffs, view_diffs, synonym_diffs, sequence_diffs)
-                with open('script_mancanti.sql', 'w') as f:
-                    for script_type in scripts:
-                        f.write(f"-- {script_type.capitalize()} Scripts --\n")
-                        for script in scripts[script_type]:
-                            f.write(script + '\n')
+        self.status_label.setText(f"{len(diff.all)} differenze trovate.")
+        QtWidgets.QMessageBox.information(
+            self, "Confronto completato",
+            f"{len(diff.all)} differenze trovate.\n\nFile generati:\n" + "\n".join(written),
+        )
 
-                logging.info("Gli script SQL per gli oggetti mancanti sono stati generati e salvati in 'script_mancanti.sql'.")
-                generate_excel_report(table_diffs, view_diffs, synonym_diffs, sequence_diffs, 'differenze_ambienti.xlsx')
-        except sqlalchemy.exc.DatabaseError as e:
-            logging.error(f"Database connection error: {e}")
-            QtWidgets.QMessageBox.critical(self, "Database Error", f"Failed to connect to the database: {e}")
+    def on_comparison_failed(self, message):
+        self.cleanup_thread()
+        self.status_label.setText("Confronto fallito.")
+        QtWidgets.QMessageBox.critical(self, "Errore di connessione", message)
+
+    def cleanup_thread(self):
+        self.scelta_tab().compare_button.setEnabled(True)
+        if self.thread is not None:
+            self.thread.quit()
+            self.thread.wait()
+            self.thread = None
+            self.worker = None
+
+
+def _mask_password(conn_string: str) -> str:
+    """Nasconde la password nella tabella a video (resta in chiaro nel file)."""
+    if "://" not in conn_string or "@" not in conn_string:
+        return conn_string
+    scheme, rest = conn_string.split("://", 1)
+    credentials, host = rest.split("@", 1)
+    if ":" not in credentials:
+        return conn_string
+    user = credentials.split(":", 1)[0]
+    return f"{scheme}://{user}:****@{host}"
+
+
+def _slug(text: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in text).strip("_").lower() or "target"
+
+
+def _set_windows_taskbar_identity():
+    """Icona corretta nella taskbar di Windows. Su Linux/macOS non serve."""
+    try:
+        from PyQt5.QtWinExtras import QtWin
+
+        QtWin.setCurrentProcessExplicitAppUserModelID("diffdb.app.1.0")
+    except ImportError:
+        pass

@@ -1,19 +1,26 @@
+import logging
 import sys
-import os
-from PyQt5 import QtWidgets, QtGui
 
-# Aggiungi il percorso del modulo diff_DB al PYTHONPATH
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+from PyQt5 import QtGui, QtWidgets
 
-from src.main_window import MainWindow  
+from src.main_window import MainWindow
+from src.paths import resource_path
+
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("DiFFDB")  # Imposta il nome dell'applicazione
-    app.setWindowIcon(QtGui.QIcon(os.path.join(os.path.dirname(__file__), 'images', 'logo.png')))  # Imposta l'icona della barra delle applicazioni
+    app.setApplicationName("DiFFDB")
+    app.setWindowIcon(QtGui.QIcon(resource_path("images", "logo.png")))
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
