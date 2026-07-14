@@ -181,3 +181,5 @@ script_mancanti.sql
 # la spec di build fa parte del progetto (il template Python ignora *.spec)
 !DiFFDB.spec
 connections.json
+
+.claude/
