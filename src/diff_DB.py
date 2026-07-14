@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 MISSING = "mancante"
 TYPE_MISMATCH = "tipo diverso"
 NULLABILITY_MISMATCH = "nullability diversa"
+DEFAULT_MISMATCH = "default diverso"
 DEFINITION_MISMATCH = "definizione diversa"
 
 
@@ -74,6 +75,34 @@ class DiffResult:
     def is_empty(self) -> bool:
         return not self.all
 
+    @property
+    def sections(self) -> Dict[str, List["Difference"]]:
+        """Differenze raggruppate per categoria (usato dal tab dei risultati)."""
+        return {
+            "tables": self.tables,
+            "constraints": self.constraints,
+            "views": self.views,
+            "sequences": self.sequences,
+            "synonyms": self.synonyms,
+        }
+
+    def subset(self, keep) -> "DiffResult":
+        """Nuovo DiffResult con le sole differenze in `keep` (per identita').
+
+        Serve all'export selettivo: l'utente spunta cosa vuole e si genera lo
+        script solo per quelle differenze.
+        """
+        ids = {id(d) for d in keep}
+        return DiffResult(
+            snapshot1=self.snapshot1,
+            snapshot2=self.snapshot2,
+            tables=[d for d in self.tables if id(d) in ids],
+            constraints=[d for d in self.constraints if id(d) in ids],
+            views=[d for d in self.views if id(d) in ids],
+            sequences=[d for d in self.sequences if id(d) in ids],
+            synonyms=[d for d in self.synonyms if id(d) in ids],
+        )
+
     def snapshot_of(self, env_name: str) -> Snapshot:
         if env_name == self.snapshot1.env_name:
             return self.snapshot1
@@ -115,7 +144,7 @@ def compare_snapshots(snap1: Snapshot, snap2: Snapshot) -> DiffResult:
         result.tables.extend(_compare_columns(table, snap1, snap2))
         result.constraints.extend(_compare_constraints(table, snap1, snap2))
 
-    result.views = _compare_names("view", set(snap1.views), set(snap2.views), e1, e2)
+    result.views = _compare_views(snap1, snap2)
     result.sequences = _compare_sequences(snap1, snap2)
     result.synonyms = _compare_synonyms(snap1, snap2)
     return result
@@ -142,6 +171,12 @@ def _compare_columns(table: str, snap1: Snapshot, snap2: Snapshot) -> List[Diffe
             diffs.append(Difference(
                 "column", table, NULLABILITY_MISMATCH, column=col,
                 detail=f"{e1}: {_null(cols1[col])} | {e2}: {_null(cols2[col])}",
+            ))
+        def1, def2 = default_signature(cols1[col]), default_signature(cols2[col])
+        if _normalize_sql(def1) != _normalize_sql(def2):
+            diffs.append(Difference(
+                "column", table, DEFAULT_MISMATCH, column=col,
+                detail=f"{e1}: {def1 or '(nessuno)'} | {e2}: {def2 or '(nessuno)'}",
             ))
 
     return diffs
@@ -187,6 +222,21 @@ def _compare_sequences(snap1: Snapshot, snap2: Snapshot) -> List[Difference]:
     return diffs
 
 
+def _compare_views(snap1: Snapshot, snap2: Snapshot) -> List[Difference]:
+    e1, e2 = snap1.env_name, snap2.env_name
+    diffs = _compare_names("view", set(snap1.views), set(snap2.views), e1, e2)
+
+    # Viste presenti in entrambi: confronto il corpo della definizione.
+    # Il confronto e' affidabile fra ambienti dello stesso dialetto (il caso reale
+    # SVI vs PRE), dove il database normalizza il testo allo stesso modo.
+    for name in sorted(set(snap1.views) & set(snap2.views)):
+        body1, body2 = snap1.views[name], snap2.views[name]
+        if _normalize_sql(body1) != _normalize_sql(body2):
+            diffs.append(Difference("view", name, DEFINITION_MISMATCH,
+                                    detail="il corpo della vista e' diverso nei due ambienti"))
+    return diffs
+
+
 def _compare_synonyms(snap1: Snapshot, snap2: Snapshot) -> List[Difference]:
     e1, e2 = snap1.env_name, snap2.env_name
     diffs = _compare_names("synonym", set(snap1.synonyms), set(snap2.synonyms), e1, e2)
@@ -209,6 +259,37 @@ def _compare_names(kind, names1, names2, env1, env2) -> List[Difference]:
 
 def _null(column) -> str:
     return "NULL" if column.nullable else "NOT NULL"
+
+
+def default_signature(column) -> str:
+    """Testo del default lato server, o stringa vuota se la colonna non ne ha."""
+    server_default = column.server_default
+    if server_default is None:
+        return ""
+    arg = getattr(server_default, "arg", None)
+    if arg is None:
+        return ""
+    text = getattr(arg, "text", arg)  # DefaultClause.arg puo' essere un TextClause
+    return str(text).strip()
+
+
+_WS = re.compile(r"\s+")
+
+
+def _normalize_sql(sql: str) -> str:
+    """Normalizza per il confronto: spazi collassati, minuscolo, parentesi e
+    apici esterni rimossi. I database riformattano viste e default (SQL Server
+    incapsula i default in doppie parentesi), quindi il confronto testuale grezzo
+    darebbe falsi positivi."""
+    if not sql:
+        return ""
+    normalized = _WS.sub(" ", sql).strip().lower().rstrip(";").strip()
+    while len(normalized) >= 2 and normalized[0] in "('" and normalized[-1] in ")'":
+        inner = normalized[1:-1].strip()
+        if not inner:
+            break
+        normalized = inner
+    return normalized
 
 
 # --- generazione SQL ------------------------------------------------------
@@ -244,6 +325,8 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> Dict[str, List[st
                 f"-- {d.name}.{d.column}: nullability diversa ({d.detail}). "
                 f"Va valutata a mano: su tabelle popolate un NOT NULL puo' fallire."
             )
+        elif d.kind == "column" and d.change == DEFAULT_MISMATCH:
+            scripts["tables"].append(_default_ddl(d, source, target, templates, quote))
 
     for d in diff.constraints:
         if d.missing_in != target_env:
@@ -266,15 +349,18 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> Dict[str, List[st
             scripts["constraints"].append(ddl)
 
     for d in diff.views:
-        if d.missing_in == target_env:
-            definition = source.views.get(d.name) or ""
-            if definition.strip():
-                scripts["views"].append(_create_view_ddl(d.name, definition, quote))
-            else:
-                scripts["views"].append(
-                    f"-- Definizione della vista {d.name} non leggibile da "
-                    f"{source.env_name}: va copiata a mano"
-                )
+        if d.missing_in != target_env and d.change != DEFINITION_MISMATCH:
+            continue  # la vista manca nell'altro ambiente, non nel target: niente da fare qui
+        definition = source.views.get(d.name) or ""
+        if not definition.strip():
+            scripts["views"].append(
+                f"-- Definizione della vista {d.name} non leggibile da "
+                f"{source.env_name}: va copiata a mano"
+            )
+        elif d.change == DEFINITION_MISMATCH:
+            scripts["views"].append(_replace_view_ddl(d.name, definition, templates, quote))
+        else:
+            scripts["views"].append(_create_view_ddl(d.name, definition, quote))
 
     for d in diff.sequences:
         if not templates["sequences"]:
@@ -359,6 +445,35 @@ def _create_view_ddl(name, definition: str, quote) -> str:
     if VIEW_HEADER.match(body):
         return f"{body};"
     return f"CREATE VIEW {quote(name)} AS\n{body};"
+
+
+def _replace_view_ddl(name, definition: str, templates: dict, quote) -> str:
+    """Riscrive una vista gia' esistente ma con corpo diverso.
+
+    Dove c'e' CREATE OR REPLACE lo si usa; altrimenti (SQL Server, SQLite) si fa
+    DROP + CREATE.
+    """
+    create = _create_view_ddl(name, definition, quote)
+    if templates["view_or_replace"]:
+        if VIEW_HEADER.match(create) and not re.match(r"^\s*CREATE\s+OR\s+REPLACE", create, re.IGNORECASE):
+            return re.sub(r"^\s*CREATE\s+VIEW", "CREATE OR REPLACE VIEW", create, count=1, flags=re.IGNORECASE)
+        return create
+    return f"DROP VIEW {quote(name)};\n{create}"
+
+
+def _default_ddl(d: Difference, source: Snapshot, target: Snapshot, templates: dict, quote) -> str:
+    """ALTER per allineare il default di una colonna al valore dell'altro ambiente."""
+    wanted = default_signature(source.columns(d.name)[d.column])
+    if wanted:
+        template = templates["set_default"]
+        if template is None:
+            return f"-- {target.dialect}: il default di {d.name}.{d.column} va cambiato a mano ({d.detail})"
+        return template.format(table=quote(d.name), column=quote(d.column), default=wanted)
+
+    template = templates["drop_default"]
+    if template is None:
+        return f"-- {target.dialect}: il default di {d.name}.{d.column} va rimosso a mano ({d.detail})"
+    return template.format(table=quote(d.name), column=quote(d.column))
 
 
 def _create_sequence_ddl(spec, quote) -> str:

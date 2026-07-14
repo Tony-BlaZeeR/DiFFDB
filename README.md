@@ -7,10 +7,10 @@ allinearli. Con interfaccia grafica e con una CLI da mettere in pipeline.
 ## Cosa rileva
 
 - Tabelle presenti in un ambiente e non nell'altro
-- Colonne mancanti, **con tipo diverso** o con nullability diversa
+- Colonne mancanti, **con tipo, nullability o valore di default diverso**
 - **Indici, foreign key, vincoli di unicita' e chiavi primarie**
-- Viste, sequenze (con i loro valori reali di START/INCREMENT) e sinonimi
-  (Oracle e SQL Server)
+- Viste (presenza **e corpo della definizione**), sequenze (con i loro valori
+  reali di START/INCREMENT) e sinonimi (Oracle e SQL Server)
 
 ## Cosa produce
 
@@ -72,10 +72,13 @@ Con `DIFFDB_HOME` puoi spostare la configurazione dove vuoi.
 
 1. **Configurazione** — aggiungi le connessioni (nome, URL, schema).
 2. **Scelta** — seleziona i due ambienti e premi *Confronta*.
-3. Scegli la cartella di output: ci trovi il report Excel e gli script SQL.
+3. **Risultati** — le differenze compaiono in un albero raggruppato per categoria,
+   con un colore per direzione (manca di qua / manca di la' / diverso). Filtra per
+   nome, spunta le voci che ti interessano ed esporta: *Excel* per tutto il report,
+   *SQL* solo per le differenze selezionate.
 
 Il confronto gira su un thread separato: la finestra resta reattiva anche su
-schemi grandi.
+schemi grandi. Non viene scritto nulla su disco finche' non premi *Esporta*.
 
 ## Uso (CLI, per la pipeline)
 
@@ -129,6 +132,7 @@ colonna (solo quello a livello di tabella). Sugli altri database non succede.
 | `src/main_window.py` | Finestra principale, tab, gestione connessioni |
 | `src/diff_DB.py` | Confronto e generazione degli script SQL |
 | `src/schema_snapshot.py` | Lettura della struttura di un database |
+| `src/results_tab.py` | Tab dei risultati: albero, filtro, export selettivo |
 | `src/report.py` | Scrittura di Excel e script (usata da GUI e CLI) |
 | `src/worker.py` | Confronto fuori dal thread della GUI |
 | `src/qt.py` | Unico punto di accesso a Qt e caricamento dei file `.ui` |

@@ -33,7 +33,10 @@ query_templates = {
         "add": "ALTER TABLE {table} ADD COLUMN {column} {type};",
         "modify": "ALTER TABLE {table} ALTER COLUMN {column} TYPE {type};",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
+        "set_default": "ALTER TABLE {table} ALTER COLUMN {column} SET DEFAULT {default};",
+        "drop_default": "ALTER TABLE {table} ALTER COLUMN {column} DROP DEFAULT;",
         "alter_add_constraint": True,
+        "view_or_replace": True,   # supporta CREATE OR REPLACE VIEW
         "sequences": True,
         "alter_sequence": "ALTER SEQUENCE {name} INCREMENT BY {increment} RESTART WITH {start};",
         "create_synonym": None,  # PostgreSQL non ha i sinonimi
@@ -42,7 +45,10 @@ query_templates = {
         "add": "ALTER TABLE {table} ADD COLUMN {column} {type};",
         "modify": "ALTER TABLE {table} MODIFY COLUMN {column} {type};",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
+        "set_default": "ALTER TABLE {table} ALTER COLUMN {column} SET DEFAULT {default};",
+        "drop_default": "ALTER TABLE {table} ALTER COLUMN {column} DROP DEFAULT;",
         "alter_add_constraint": True,
+        "view_or_replace": True,
         "sequences": False,  # MySQL non ha le sequenze classiche
         "alter_sequence": None,
         "create_synonym": None,
@@ -51,7 +57,10 @@ query_templates = {
         "add": "ALTER TABLE {table} ADD {column} {type};",
         "modify": "ALTER TABLE {table} MODIFY {column} {type};",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
+        "set_default": "ALTER TABLE {table} MODIFY {column} DEFAULT {default};",
+        "drop_default": "ALTER TABLE {table} MODIFY {column} DEFAULT NULL;",
         "alter_add_constraint": True,
+        "view_or_replace": True,
         "sequences": True,
         "alter_sequence": "ALTER SEQUENCE {name} INCREMENT BY {increment};",
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
@@ -60,7 +69,12 @@ query_templates = {
         "add": "ALTER TABLE {table} ADD {column} {type};",
         "modify": "ALTER TABLE {table} ALTER COLUMN {column} {type};",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
+        # Su SQL Server il default e' un constraint con nome proprio: per cambiarlo
+        # va prima eliminato quello esistente. Si segnala invece di generare SQL fragile.
+        "set_default": None,
+        "drop_default": None,
         "alter_add_constraint": True,
+        "view_or_replace": False,  # niente OR REPLACE: si usa DROP + CREATE
         "sequences": True,
         "alter_sequence": "ALTER SEQUENCE {name} RESTART WITH {start} INCREMENT BY {increment};",
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
@@ -69,7 +83,10 @@ query_templates = {
         "add": "ALTER TABLE {table} ADD COLUMN {column} {type};",
         "modify": "-- SQLite non supporta ALTER COLUMN: {table}.{column} ({type}) richiede di ricreare la tabella",
         "drop": "ALTER TABLE {table} DROP COLUMN {column};",
+        "set_default": None,   # SQLite non sa cambiare il default di una colonna esistente
+        "drop_default": None,
         "alter_add_constraint": False,  # SQLite non aggiunge vincoli a tabelle esistenti
+        "view_or_replace": False,
         "sequences": False,
         "alter_sequence": None,
         "create_synonym": None,
