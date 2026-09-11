@@ -229,6 +229,7 @@ class ResultsTab(QtWidgets.QWidget):
             "views": self.tr("Viste"),
             "sequences": self.tr("Sequenze"),
             "synonyms": self.tr("Sinonimi"),
+            "triggers": self.tr("Trigger"),
         }.get(chiave, chiave)
 
     def _costruisci_diff_item(self, d):

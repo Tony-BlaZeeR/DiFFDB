@@ -146,7 +146,8 @@ def _drop_database(dialetto, nome) -> str:
 # --- utenti separati (Oracle: lo schema e' l'utente) -----------------------
 
 PRIVILEGI_ORACLE = ("CREATE SESSION", "CREATE TABLE", "CREATE VIEW",
-                    "CREATE SEQUENCE", "CREATE SYNONYM", "UNLIMITED TABLESPACE")
+                    "CREATE SEQUENCE", "CREATE SYNONYM", "CREATE TRIGGER",
+                    "CREATE PROCEDURE", "UNLIMITED TABLESPACE")
 
 
 def _crea_utenti(admin, url):

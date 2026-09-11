@@ -39,6 +39,15 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 - **`--json`**: le differenze in un oggetto JSON su stdout invece del
   riepilogo testuale, con chiavi stabili in inglese pensate per essere lette
   da un altro programma. Si combina con `--dry-run` e `--fail-on-diff`.
+- **Trigger** nel confronto: nessun dialetto li riflette via SQLAlchemy,
+  l'Inspector non ha nemmeno un metodo per elencarli. Letti con il modo
+  nativo di ogni motore di ricostruire il CREATE TRIGGER completo
+  (`pg_get_triggerdef`, `DBMS_METADATA.GET_DDL`, `sys.sql_modules`, `SHOW
+  CREATE TRIGGER`). Confronto e allineamento sempre DROP + CREATE, mai
+  CREATE OR REPLACE: MySQL non lo supporta per i trigger in nessuna versione.
+  Limite noto: su PostgreSQL e Oracle il corpo che conta e' spesso nella
+  funzione/procedura richiamata, non nel testo del trigger — confrontare
+  anche quelle e' un lavoro a parte, non ancora fatto.
 
 ### Corretto
 

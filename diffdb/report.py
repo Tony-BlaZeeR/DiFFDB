@@ -21,6 +21,7 @@ SECTION_TITLES = {
     "views": "Viste",
     "sequences": "Sequenze",
     "synonyms": "Sinonimi",
+    "triggers": "Trigger",
 }
 
 COLONNE = ["Oggetto", "Tipo", "Campo", "Differenza", "Presente in", "Mancante in", "Dettaglio"]
