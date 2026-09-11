@@ -64,6 +64,17 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
   uguali.
 - Contrasto dei colori portato a WCAG AA, e la direzione di una differenza non
   e' piu' affidata al solo colore.
+- Le viste di MySQL non vengono piu' avvolte in un secondo `CREATE VIEW`: MySQL
+  restituisce la definizione completa, con `ALGORITHM` e `DEFINER` fra `CREATE`
+  e `VIEW`, e l'intestazione non veniva riconosciuta.
+- I tipi di SQL Server con collation non rompono piu' l'`ALTER TABLE`: `str()`
+  li rende con le virgolette (`COLLATE "SQL_Latin1_..."`) e il server le
+  rifiuta. Lo snapshot ora tiene separata la forma per il confronto da quella
+  per il DDL.
+
+  Entrambi trovati dalla prima esecuzione della CI di integrazione sui motori
+  veri: PostgreSQL passava da sempre, MySQL e SQL Server no, e senza eseguirli
+  non c'era modo di accorgersene.
 
 ## [1.1.0] e precedenti
 
