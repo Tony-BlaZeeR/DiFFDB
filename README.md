@@ -483,10 +483,18 @@ colonna (solo quello a livello di tabella). Sugli altri database non succede.
 Limite noto: su SQLite la riflessione dei vincoli **CHECK** e' inaffidabile —
 la condizione esce con caratteri di troppo, e con piu' di un vincolo i nomi si
 fondono. DiFFDB non li legge su quel dialetto: la categoria resta vuota invece
-di confrontare un testo che il motore stesso ha gia' rovinato in lettura. Sugli
-altri quattro dialetti i CHECK si confrontano per condizione (normalizzata),
-non per nome: i nomi sono spesso autogenerati dal motore e cambiano da un
-ambiente all'altro anche quando il vincolo e' lo stesso.
+di confrontare un testo che il motore stesso ha gia' rovinato in lettura.
+
+Su SQL Server invece il limite non e' nella lettura ma in SQLAlchemy: il
+driver `pymssql` non implementa affatto la riflessione dei CHECK
+(`NotImplementedError`). DiFFDB legge i suoi vincoli con una query diretta sul
+catalogo di sistema (`sys.check_constraints`), come gia' fa per sequenze e
+sinonimi dove SQLAlchemy non espone qualcosa in modo uniforme.
+
+Su PostgreSQL, MySQL, Oracle e SQL Server i CHECK si confrontano per
+condizione (normalizzata), non per nome: i nomi sono spesso autogenerati dal
+motore e cambiano da un ambiente all'altro anche quando il vincolo e' lo
+stesso.
 
 ## Struttura
 

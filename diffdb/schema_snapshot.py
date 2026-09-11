@@ -19,6 +19,20 @@ from diffdb.urls import expand  # noqa: F401  (ri-esportata: la usa anche diff_D
 
 logger = logging.getLogger(__name__)
 
+# pymssql (il driver usato per SQL Server) non implementa la lettura dei
+# vincoli CHECK: Dialect.get_check_constraints() solleva NotImplementedError
+# per l'intera gerarchia del dialetto MSSQL in SQLAlchemy 2.0. Non e' un
+# problema di sintassi ne' di permessi, e' proprio assente — verificato
+# leggendo il codice del dialetto prima di scrivere questa query, dopo che la
+# CI aveva mostrato zero vincoli CHECK su un ambiente che ne aveva uno vero.
+# PostgreSQL, MySQL e Oracle lo leggono gia' da soli via reflect().
+MSSQL_CHECK_QUERY = (
+    "SELECT t.name AS table_name, cc.name, cc.definition "
+    "FROM sys.check_constraints cc "
+    "JOIN sys.tables t ON cc.parent_object_id = t.object_id "
+    "WHERE SCHEMA_NAME(t.schema_id) = COALESCE(:schema, SCHEMA_NAME())"
+)
+
 # I sinonimi esistono solo su Oracle e SQL Server.
 SYNONYM_QUERIES = {
     "oracle": (
@@ -160,6 +174,9 @@ def take_snapshot(env_name: str, engine: Engine, schema: str | None = None,
             if regole.tabella_inclusa(n)]
     if nomi:
         snapshot.metadata.reflect(bind=engine, schema=schema, views=False, only=nomi)
+
+    if engine.dialect.name == "mssql":
+        _fetch_mssql_check_constraints(engine, schema, snapshot.metadata)
 
     if regole.categoria_inclusa("views"):
         for view in inspector.get_view_names(schema=schema):
@@ -304,6 +321,28 @@ def snapshot_connection(env_name: str, conn_str: str, schema: str | None = None,
         return take_snapshot(env_name, engine, schema, regole)
     finally:
         engine.dispose()
+
+
+def _fetch_mssql_check_constraints(engine: Engine, schema: str | None, metadata: MetaData) -> None:
+    """Aggiunge i vincoli CHECK alle tabelle gia' riflesse.
+
+    Modifica `metadata` sul posto: aggiunge un CheckConstraint vero a ogni
+    Table che SQLAlchemy ha gia' costruito, cosi' tutto il resto del codice
+    (confronto, generazione del DDL, annullamento, round-trip su file) continua
+    a funzionare senza saperlo — vede lo stesso genere di oggetto che ottiene
+    da PostgreSQL, MySQL e Oracle via reflect() diretto.
+    """
+    try:
+        with engine.connect() as conn:
+            righe = conn.execute(text(MSSQL_CHECK_QUERY), {"schema": schema})
+            for nome_tabella, nome_vincolo, definizione in righe:
+                chiave = f"{schema}.{nome_tabella}" if schema else nome_tabella
+                tabella = metadata.tables.get(chiave)
+                if tabella is None:
+                    continue   # tabella esclusa dalle regole, o non filtrata
+                tabella.append_constraint(CheckConstraint(definizione, name=nome_vincolo))
+    except SQLAlchemyError as exc:
+        logger.warning("Lettura dei vincoli CHECK di SQL Server fallita: %s", exc)
 
 
 def _fetch_sequences(engine, schema, inspector) -> dict[str, SequenceSpec]:
