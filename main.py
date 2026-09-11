@@ -1,26 +1,13 @@
-import logging
+"""Avvio dai sorgenti: `python main.py`.
+
+Il codice vero sta in diffdb/app.py, che e' anche l'entry point del comando
+`diffdb-gui` installato con pip. Questo file resta per comodita' di chi lavora
+dal repository e perche' e' quello che PyInstaller impacchetta.
+"""
+
 import sys
 
-import src  # noqa: F401  (fissa il binding Qt prima di qualunque import di qtawesome/qtpy)
-from src.main_window import MainWindow
-from src.paths import resource_path
-from src.qt import QtGui, QtWidgets
-
-
-def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-
-    app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("DiFFDB")
-    app.setWindowIcon(QtGui.QIcon(resource_path("images", "logo.png")))
-
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
-
+from diffdb.app import main
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

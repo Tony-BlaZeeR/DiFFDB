@@ -1,0 +1,96 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "diffdb"
+dynamic = ["version"]
+description = "Confronta la struttura di due database e genera lo script SQL per allinearli"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Antonio" }]
+keywords = ["database", "schema", "diff", "migration", "sqlalchemy", "dba"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+]
+
+# Il minimo per confrontare e generare: chi vuole solo la CLI non si porta
+# dietro Qt. L'interfaccia grafica e i driver stanno negli extra.
+dependencies = [
+    "SQLAlchemy>=2.0,<3",
+    "keyring>=25,<26",
+]
+
+[project.optional-dependencies]
+gui = [
+    "PySide6>=6.8,<7",
+    "QtAwesome>=1.4,<2",
+    "QtPy>=2.4,<3",
+]
+report = [
+    "pandas>=2.2,<3",
+    "openpyxl>=3.1,<4",
+]
+# Driver: si installa quello che serve, non tutti.
+postgresql = ["psycopg2-binary>=2.9,<3"]
+mysql = ["PyMySQL>=1.1,<2"]
+oracle = ["oracledb>=2.5,<3"]        # thin mode: nessun Instant Client
+mssql = ["pymssql>=2.3,<3"]
+all = [
+    "diffdb[gui,report,postgresql,mysql,oracle,mssql]",
+]
+
+[project.scripts]
+diffdb = "diffdb.cli:main"
+
+[project.gui-scripts]
+diffdb-gui = "diffdb.app:main"
+
+[project.urls]
+Repository = "https://github.com/antoniobis98/DiFFDB"
+
+[tool.hatch.version]
+path = "diffdb/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["diffdb"]
+
+# Le risorse (ui, styles, images, translations) stanno dentro diffdb/ e
+# finiscono nel wheel insieme al pacchetto: non serve dichiararle, e
+# dichiararle le duplicherebbe.
+
+[tool.hatch.build.targets.sdist]
+include = ["diffdb", "tests", "tools", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: richiede un database vero"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Scelte, non subite: errori veri (E, F), import ordinati (I), trappole note
+# (B) e sintassi moderna (UP), visto che il minimo e' Python 3.10.
+select = ["E", "W", "F", "I", "B", "UP"]
+ignore = [
+    # I moduli storici hanno nomi in camelCase (diff_DB, dialectConfig...):
+    # rinominarli rompe gli import di chi gia' usa DiFFDB, per una questione
+    # di stile. Si lascia stare.
+    "N999",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# I test aggiungono la radice a sys.path prima di importare: gli import non
+# possono stare in cima.
+"tests/*" = ["E402"]
+"tools/*" = ["E402"]
