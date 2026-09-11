@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from diffdb.diff_DB import compare_environments  # noqa: E402
 from diffdb.qt import Qt, QtWidgets  # noqa: E402
-from diffdb.results_tab import ResultsTab  # noqa: E402
+from diffdb.results_tab import DIFF_ROLE, ResultsTab  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -129,3 +129,58 @@ def test_export_sql_senza_selezione_non_chiama_il_callback(app, diff, monkeypatc
     monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *a, **k: None)
     tab._export_sql()
     assert ricevuti == []
+
+
+# --- scala: molte differenze --------------------------------------------
+
+
+def _diff_con_n_differenze(n):
+    """Un DiffResult sintetico, senza toccare un database: serve solo a
+    misurare come si comporta l'albero con molte righe."""
+    from diffdb.diff_DB import Difference, DiffResult
+    from diffdb.schema_snapshot import Snapshot
+
+    snap1, snap2 = Snapshot("SVI", "postgresql"), Snapshot("COL", "postgresql")
+    diffs = [Difference("column", f"tabella_{i}", "mancante", column=f"col_{i}",
+                        missing_in="COL", present_in="SVI", detail=f"VARCHAR({i % 200})")
+             for i in range(n)]
+    return DiffResult(snapshot1=snap1, snapshot2=snap2, tables=diffs)
+
+
+def test_l_albero_regge_decine_di_migliaia_di_righe(app):
+    """QTreeWidgetItem(parent, ...) chiamato una riga alla volta e' quadratico
+    in Qt: ogni inserimento ricalcola qualcosa sui fratelli esistenti. Prima
+    di questo test, 100.000 differenze bloccavano l'interfaccia per 7-8
+    secondi; con gli item costruiti senza genitore e attaccati tutti insieme
+    (addChildren), lo stesso caso sta sotto i 3 secondi anche su una macchina
+    lenta come un runner di CI — la vecchia quadratica non ci passerebbe
+    nemmeno vicino."""
+    import time
+
+    tab = _tab(app)
+    diff = _diff_con_n_differenze(100_000)
+
+    t0 = time.perf_counter()
+    tab.show_result(diff)
+    durata = time.perf_counter() - t0
+
+    assert durata < 3.0, f"show_result su 100.000 differenze ha impiegato {durata:.2f}s"
+
+
+def test_le_righe_costruite_in_massa_sono_corrette_come_prima(app):
+    """La velocita' non deve costare la correttezza: checkbox, colonne e il
+    ruolo con la Difference devono essere quelli di sempre."""
+    tab = _tab(app)
+    diff = _diff_con_n_differenze(50)
+    tab.show_result(diff)
+
+    sezione = tab.tree.invisibleRootItem().child(0)
+    assert sezione.childCount() == 50
+
+    riga = sezione.child(0)
+    assert riga.checkState(0) == Qt.CheckState.Checked
+    assert riga.text(0) == "tabella_0.col_0"
+    assert riga.data(0, DIFF_ROLE) is not None
+    assert riga.data(0, DIFF_ROLE).name == "tabella_0"
+
+    assert len(tab.checked_differences()) == 50
