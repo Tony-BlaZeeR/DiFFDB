@@ -222,3 +222,62 @@ def test_ogni_dialetto_dichiara_tutte_le_capacita(dialetto):
               "alter_add_constraint", "view_or_replace", "sequences", "alter_sequence",
               "create_synonym", "begin", "commit"}
     assert attese <= set(templates_for(dialetto))
+
+
+# --- casi trovati dalla prima esecuzione sui motori veri ---------------------
+
+
+def test_la_vista_di_mysql_non_viene_avvolta_due_volte():
+    """MySQL restituisce la definizione completa con le sue clausole in mezzo.
+
+    Senza riconoscerle, il risultato era
+    `CREATE VIEW x AS CREATE ALGORITHM=... VIEW ...`, che non e' SQL valido.
+    """
+    from diffdb.diff_DB import VIEW_HEADER
+
+    definizione = ("CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`%` "
+                   "SQL SECURITY DEFINER VIEW `clienti_attivi` AS select 1")
+    assert VIEW_HEADER.match(definizione)
+
+
+@pytest.mark.parametrize("definizione", [
+    "CREATE VIEW v AS SELECT 1",
+    "CREATE OR REPLACE VIEW v AS SELECT 1",
+    "CREATE TEMPORARY VIEW v AS SELECT 1",
+    "CREATE ALGORITHM=MERGE VIEW v AS SELECT 1",
+    "CREATE DEFINER=`app`@`localhost` SQL SECURITY INVOKER VIEW v AS SELECT 1",
+])
+def test_le_intestazioni_di_vista_note_vengono_riconosciute(definizione):
+    from diffdb.diff_DB import VIEW_HEADER
+
+    assert VIEW_HEADER.match(definizione)
+
+
+def test_il_corpo_di_una_select_non_e_un_intestazione():
+    """PostgreSQL e Oracle restituiscono solo la SELECT: va avvolta."""
+    from diffdb.diff_DB import VIEW_HEADER
+
+    assert not VIEW_HEADER.match("SELECT id, nome FROM clienti")
+
+
+def test_il_tipo_con_collation_si_confronta_generico_e_si_scrive_nativo():
+    """Su SQL Server str() rende VARCHAR(120) COLLATE "...", con le virgolette,
+    che in un ALTER TABLE il server rifiuta. Il confronto usa la prima forma,
+    il DDL la seconda."""
+    from diffdb.snapshot_io import type_from_text
+
+    generico = 'VARCHAR(120) COLLATE "SQL_Latin1_General_CP1_CI_AS"'
+    nativo = "VARCHAR(120) COLLATE SQL_Latin1_General_CP1_CI_AS"
+
+    tipo = type_from_text(generico, nativo)
+
+    assert str(tipo) == generico                       # per il confronto
+    assert tipo.get_col_spec() == nativo               # per il DDL
+
+
+def test_senza_forma_nativa_il_tipo_resta_quello_di_prima():
+    """Gli snapshot gia' salvati non hanno il campo: devono continuare a valere."""
+    from diffdb.snapshot_io import type_from_text
+
+    tipo = type_from_text("VARCHAR2(50)")
+    assert str(tipo) == tipo.get_col_spec() == "VARCHAR2(50)"

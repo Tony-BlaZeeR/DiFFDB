@@ -208,7 +208,8 @@ def to_dict(snapshot: Snapshot, source: str | None = None) -> dict:
         "schema": snapshot.schema,
         # Mai la password: lo snapshot e' fatto per finire in git o in allegato a un ticket.
         "source": mask_password(source) if source else None,
-        "tables": {name: _table_to_dict(table) for name, table in sorted(snapshot.tables.items())},
+        "tables": {name: _table_to_dict(table, snapshot.dialect_impl)
+                   for name, table in sorted(snapshot.tables.items())},
         "views": dict(sorted(snapshot.views.items())),
         "sequences": {
             name: {
@@ -242,12 +243,33 @@ def _filtri(regole) -> dict | None:
     return filtri
 
 
-def _table_to_dict(table: Table) -> dict:
+def _tipo_ddl(column, dialect_impl) -> str | None:
+    """Come il dialetto scrive davvero questo tipo in un DDL.
+
+    Serve solo quando differisce dalla forma generica: il confronto usa `type`,
+    la generazione usa questo. Tenerli separati e' l'unico modo di avere insieme
+    un confronto stabile e un DDL che il server accetta.
+    """
+    if dialect_impl is None:
+        return None
+    try:
+        reso = column.type.compile(dialect=dialect_impl)
+    except Exception:      # tipo che quel dialetto non sa rendere
+        return None
+    return reso if reso != str(column.type) else None
+
+
+def _table_to_dict(table: Table, dialect_impl=None) -> dict:
     return {
         "columns": [
             {
                 "name": column.name,
                 "type": str(column.type),
+                # Il tipo come lo scrive il *suo* dialetto, quando non coincide
+                # con la forma generica. Su SQL Server str() rende
+                # 'VARCHAR(120) COLLATE "..."', con le virgolette, che in un
+                # ALTER TABLE il server rifiuta.
+                "type_ddl": _tipo_ddl(column, dialect_impl),
                 "nullable": bool(column.nullable),
                 "server_default": _server_default(column),
                 # Senza questo flag SQLAlchemy, ricostruendo la tabella, decide
@@ -387,7 +409,7 @@ def _table_from_dict(metadata: MetaData, name: str, payload: dict, schema) -> Ta
     columns = [
         Column(
             c["name"],
-            type_from_text(c.get("type") or ""),
+            type_from_text(c.get("type") or "", c.get("type_ddl")),
             nullable=bool(c.get("nullable", True)),
             # text(): il default e' SQL da riemettere tale e quale. Passandolo come
             # stringa, SQLAlchemy lo tratterebbe come letterale e scriverebbe DEFAULT '0'.
@@ -440,35 +462,46 @@ _PLAIN_TYPES = ("INTEGER", "INT", "BIGINT", "SMALLINT", "BOOLEAN", "DATE", "DATE
 class RawType(types.UserDefinedType):
     """Tipo che non corrisponde a un tipo SQLAlchemy noto (VARCHAR2, NUMBER, ...).
 
-    Ne conserva il testo esatto: il confronto lo vede identico all'originale e la
-    generazione del DDL lo riemette tale e quale.
+    Conserva due forme, che non sempre coincidono: quella generica, con cui il
+    confronto decide se una colonna e' cambiata, e quella con cui il dialetto la
+    scrive in un DDL. Su SQL Server la prima e'
+    `VARCHAR(120) COLLATE "SQL_Latin1_General_CP1_CI_AS"` e il server la rifiuta;
+    la seconda e' quella buona.
     """
 
     cache_ok = True
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, ddl: str | None = None):
         self.text = text
+        self.ddl = ddl or text
 
     def get_col_spec(self, **kw) -> str:
-        return self.text
+        return self.ddl
 
     def __str__(self) -> str:
         return self.text
 
     def __repr__(self) -> str:
-        return f"RawType({self.text!r})"
+        return f"RawType({self.text!r}, ddl={self.ddl!r})"
 
 
-def type_from_text(text: str):
+def type_from_text(text: str, ddl: str | None = None):
     """Ricostruisce il tipo dal testo salvato.
 
     Prova con un tipo SQLAlchemy vero (che sa ricompilarsi su un altro dialetto)
     e lo accetta solo se si ristampa identico all'originale: cosi' il round-trip
     non puo' cambiare la firma di una colonna e inventare differenze.
+
+    `ddl` e' la forma che usa il dialetto di origine, quando differisce.
     """
     text = (text or "").strip()
     if not text:
         return RawType("")
+
+    # Con una forma DDL propria serve il tipo grezzo: un tipo SQLAlchemy la
+    # ricalcolerebbe a modo suo e si tornerebbe al punto di partenza.
+    if ddl:
+        return RawType(text, ddl)
 
     candidate = _structured_type(text)
     if candidate is not None and str(candidate).upper() == text.upper():

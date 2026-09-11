@@ -587,7 +587,16 @@ def _compile(ddl_element, target: Snapshot) -> str:
     return str(ddl_element.compile(dialect=target.dialect_impl)).strip().rstrip(";") + ";"
 
 
-VIEW_HEADER = re.compile(r"^\s*CREATE\s+(OR\s+REPLACE\s+)?(TEMP\w*\s+)?VIEW\b", re.IGNORECASE)
+# MySQL restituisce la definizione completa con le sue clausole in mezzo:
+#   CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`%` SQL SECURITY DEFINER VIEW x AS ...
+# Senza riconoscerle, la definizione veniva avvolta in un secondo CREATE VIEW e
+# il risultato non era SQL valido.
+VIEW_HEADER = re.compile(
+    r"^\s*CREATE\s+"
+    r"(?:(?:OR\s+REPLACE|TEMP\w*|ALGORITHM\s*=\s*\S+|DEFINER\s*=\s*\S+"
+    r"|SQL\s+SECURITY\s+\w+)\s+)*"
+    r"VIEW\b",
+    re.IGNORECASE)
 
 
 def _create_view_ddl(name, definition: str, qualify) -> str:
