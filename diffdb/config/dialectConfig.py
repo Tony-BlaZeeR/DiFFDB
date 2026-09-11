@@ -30,6 +30,7 @@ def normalize_dialect(dialect: str) -> str:
 
 query_templates = {
     "postgresql": {
+        "drop_check": None,   # usa drop_constraint
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index};",
         "drop_constraint": "ALTER TABLE {table} DROP CONSTRAINT {name};",
@@ -54,6 +55,7 @@ query_templates = {
         "create_synonym": None,  # PostgreSQL non ha i sinonimi
     },
     "mysql": {
+        "drop_check": "ALTER TABLE {table} DROP CHECK {name};",
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index} ON {table};",
         "drop_constraint": "ALTER TABLE {table} DROP INDEX {name};",
@@ -78,6 +80,7 @@ query_templates = {
         "create_synonym": None,
     },
     "oracle": {
+        "drop_check": None,   # usa drop_constraint
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index};",
         "drop_constraint": "ALTER TABLE {table} DROP CONSTRAINT {name};",
@@ -103,6 +106,7 @@ query_templates = {
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
     },
     "mssql": {
+        "drop_check": None,   # usa drop_constraint
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index} ON {table};",
         "drop_constraint": "ALTER TABLE {table} DROP CONSTRAINT {name};",
@@ -129,6 +133,7 @@ query_templates = {
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
     },
     "sqlite": {
+        "drop_check": None,
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index};",
         "drop_constraint": None,

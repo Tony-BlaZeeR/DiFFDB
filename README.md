@@ -8,7 +8,7 @@ allinearli. Con interfaccia grafica e con una CLI da mettere in pipeline.
 
 - Tabelle presenti in un ambiente e non nell'altro
 - Colonne mancanti, **con tipo, nullability o valore di default diverso**
-- **Indici, foreign key, vincoli di unicita' e chiavi primarie**
+- **Indici, foreign key, vincoli di unicita', CHECK e chiavi primarie**
 - Viste (presenza **e corpo della definizione**), sequenze (con i loro valori
   reali di START/INCREMENT) e sinonimi (Oracle e SQL Server)
 
@@ -479,6 +479,14 @@ piu' lento a partire.
 
 Limite noto: su SQLite, SQLAlchemy non riflette l'`UNIQUE` dichiarato inline sulla
 colonna (solo quello a livello di tabella). Sugli altri database non succede.
+
+Limite noto: su SQLite la riflessione dei vincoli **CHECK** e' inaffidabile —
+la condizione esce con caratteri di troppo, e con piu' di un vincolo i nomi si
+fondono. DiFFDB non li legge su quel dialetto: la categoria resta vuota invece
+di confrontare un testo che il motore stesso ha gia' rovinato in lettura. Sugli
+altri quattro dialetti i CHECK si confrontano per condizione (normalizzata),
+non per nome: i nomi sono spesso autogenerati dal motore e cambiano da un
+ambiente all'altro anche quando il vincolo e' lo stesso.
 
 ## Struttura
 

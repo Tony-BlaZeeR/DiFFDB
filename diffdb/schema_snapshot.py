@@ -7,9 +7,10 @@ SQLAlchemy non li espone in modo uniforme.
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 
-from sqlalchemy import MetaData, UniqueConstraint, create_engine, inspect, text
+from sqlalchemy import CheckConstraint, MetaData, UniqueConstraint, create_engine, inspect, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -111,6 +112,26 @@ class Snapshot:
             unique_signature(c): c
             for c in table.constraints
             if isinstance(c, UniqueConstraint)
+        }
+
+    def check_constraints(self, table_name: str) -> dict[str, object]:
+        """Vincoli CHECK, per condizione normalizzata (i nomi sono spesso
+        autogenerati dal motore e cambiano da un ambiente all'altro).
+
+        Su SQLite la riflessione e' inaffidabile anche con un solo vincolo: il
+        testo esce con una parentesi di troppo, e con due vincoli SQLAlchemy ne
+        fonde i nomi. Meglio dichiarare la categoria assente che confrontare un
+        testo che il motore stesso ha già rovinato in lettura.
+        """
+        if self.dialect == "sqlite":
+            return {}
+        table = self.table(table_name)
+        if table is None:
+            return {}
+        return {
+            check_signature(c): c
+            for c in table.constraints
+            if isinstance(c, CheckConstraint)
         }
 
     def primary_key(self, table_name: str):
@@ -346,3 +367,30 @@ def fk_signature(fk) -> str:
 
 def unique_signature(constraint) -> str:
     return "(" + ",".join(c.name for c in constraint.columns) + ")"
+
+
+_WS = re.compile(r"\s+")
+
+
+def normalize_sql(sql) -> str:
+    """Normalizza per il confronto: spazi collassati, minuscolo, parentesi e
+    apici esterni rimossi. I database riformattano viste, default e check
+    (SQL Server incapsula i default in doppie parentesi), quindi il confronto
+    testuale grezzo darebbe falsi positivi."""
+    sql = str(sql) if sql is not None else ""
+    if not sql:
+        return ""
+    normalized = _WS.sub(" ", sql).strip().lower().rstrip(";").strip()
+    while len(normalized) >= 2 and normalized[0] in "('" and normalized[-1] in ")'":
+        inner = normalized[1:-1].strip()
+        if not inner:
+            break
+        normalized = inner
+    return normalized
+
+
+def check_signature(constraint) -> str:
+    """La condizione normalizzata, non il nome: i nomi dei CHECK sono spesso
+    autogenerati dal motore (es. 'clienti_saldo_check' su PostgreSQL) e
+    cambiano da un ambiente all'altro anche quando il vincolo e' lo stesso."""
+    return normalize_sql(getattr(constraint, "sqltext", constraint))

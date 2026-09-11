@@ -41,7 +41,8 @@ def _ddl_completo(dialetto):
         f"  email {t['testo'].format(n=120)},"
         f"  partita_iva {t['testo'].format(n=11)},"
         f"  CONSTRAINT pk_clienti PRIMARY KEY (id),"
-        f"  CONSTRAINT uq_clienti_piva UNIQUE (partita_iva))",
+        f"  CONSTRAINT uq_clienti_piva UNIQUE (partita_iva),"
+        f"  CONSTRAINT ck_clienti_id_positivo CHECK (id > 0))",
         f"CREATE TABLE ordini ("
         f"  id {t['intero']} NOT NULL,"
         f"  cliente_id {t['intero']} NOT NULL,"
@@ -119,6 +120,8 @@ def test_rileva_le_differenze_attese(ambienti):
     # unico impone l'unicita' — ma la categoria cambia, e chi legge il report
     # su Oracle vedra' "indice" dove si aspettava "unique".
     assert ("unique", MISSING) in trovate or ("index", MISSING) in trovate
+
+    assert ("check", MISSING) in trovate            # ck_clienti_id_positivo
     assert ("view", MISSING) in trovate             # clienti_attivi
     if SEQUENZE[ambienti.dialetto]:
         assert ("sequence", MISSING) in trovate
