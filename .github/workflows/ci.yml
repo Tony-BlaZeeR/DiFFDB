@@ -142,9 +142,10 @@ jobs:
           # Qui i tre motori ci sono: se uno non risponde il job deve diventare
           # rosso, non verde con dei test saltati.
           DIFFDB_TEST_STRICT: "1"
-        # Oracle ha un job suo: qui verrebbe saltato, e con STRICT attiva
-        # saltare e' un errore.
-        run: python -m pytest tests/integration -v -k "not oracle"
+        # -p no:pytest-qt: il plugin importa Qt all'avvio, e qui le librerie
+        # grafiche di sistema non ci sono. Questi test non usano l'interfaccia.
+        # -k: Oracle ha un job suo, e con STRICT attiva saltarlo sarebbe un errore.
+        run: python -m pytest tests/integration -v -p no:pytest-qt -k "not oracle"
 
   integration-oracle:
     name: Integrazione (Oracle)
@@ -176,9 +177,8 @@ jobs:
           # oracledb in thin mode: nessun Instant Client da installare.
           DIFFDB_TEST_ORACLE_URL: oracle+oracledb://system:diffdb_pw1@localhost:1521/?service_name=FREEPDB1
           DIFFDB_TEST_STRICT: "1"
-        # Gli altri tre dialetti non hanno la loro variabile qui: verrebbero
-        # saltati, e con STRICT attiva sarebbe un errore. Si seleziona Oracle.
-        run: python -m pytest tests/integration -v -k oracle
+        # Come sopra: niente Qt qui, e si seleziona il solo Oracle.
+        run: python -m pytest tests/integration -v -p no:pytest-qt -k oracle
 
   pacchetto:
     name: Wheel e sdist
