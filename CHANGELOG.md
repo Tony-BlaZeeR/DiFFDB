@@ -16,8 +16,11 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
   nomi sono spesso autogenerati dal motore e cambiano da un ambiente
   all'altro. Generazione e annullamento seguono lo stesso schema degli altri
   vincoli (MySQL ha una sintassi propria per toglierli, `DROP CHECK`, diversa
-  da `DROP CONSTRAINT`). Su SQLite la lettura resta disattivata: la
-  riflessione e' inaffidabile anche con un solo vincolo.
+  da `DROP CONSTRAINT`). Letti su tutti e quattro i motori veri: su SQL
+  Server con una query diretta sul catalogo di sistema, perche' il driver
+  `pymssql` non implementa affatto la riflessione dei CHECK in SQLAlchemy. Su
+  SQLite la lettura resta disattivata: la riflessione e' inaffidabile anche
+  con un solo vincolo.
 
 ## [1.2.0]
 
