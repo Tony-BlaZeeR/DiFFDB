@@ -34,8 +34,9 @@ _RIGA_META = re.compile(r"^--\s*diffdb-meta:\s*(\{.*\})\s*$", re.MULTILINE)
 
 
 def intestazione(diff: DiffResult, target_env: str, origine: str | None = None,
-                 incluse: int | None = None, totali: int | None = None) -> str:
-    """Le righe di commento in cima allo script di allineamento."""
+                 incluse: int | None = None, totali: int | None = None,
+                 annullamento: bool = False) -> str:
+    """Le righe di commento in cima allo script."""
     target = diff.snapshot_of(target_env)
     sorgente = diff.other_than(target_env)
 
@@ -43,6 +44,7 @@ def intestazione(diff: DiffResult, target_env: str, origine: str | None = None,
         "versione_diffdb": __version__,
         "generato": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "generato_da": _chi(),
+        "tipo": "annullamento" if annullamento else "allineamento",
         "target": target.env_name,
         "impronta_target": fingerprint(target),
         "sorgente": sorgente.env_name,
@@ -58,7 +60,8 @@ def intestazione(diff: DiffResult, target_env: str, origine: str | None = None,
         meta["differenze_accettate"] = diff.accettate
 
     righe = [
-        f"-- DiFFDB {__version__} - script di allineamento",
+        f"-- DiFFDB {__version__} - script di "
+        + ("annullamento" if annullamento else "allineamento"),
         f"-- Ambiente da allineare : {target.env_name} ({target.dialect}"
         + (f", schema {target.schema}" if target.schema else "") + ")",
         f"-- Allineato a           : {sorgente.env_name}",

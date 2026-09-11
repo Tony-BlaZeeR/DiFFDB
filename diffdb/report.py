@@ -10,7 +10,7 @@ import re
 
 from diffdb.audit import intestazione
 from diffdb.config.dialectConfig import templates_for
-from diffdb.diff_DB import DiffResult, generate_sql_scripts
+from diffdb.diff_DB import DiffResult, generate_rollback_scripts, generate_sql_scripts
 from diffdb.snapshot_io import fingerprint
 
 logger = logging.getLogger(__name__)
@@ -35,16 +35,29 @@ def write_excel(diff, output_dir: str) -> str:
 
 
 def write_sql(diff, output_dir: str, totali=None):
-    """Uno script SQL per direzione. Restituisce i percorsi scritti (puo' essere vuoto)."""
+    """Per ogni direzione: lo script di allineamento e quello per disfarlo.
+
+    L'annullamento serve soprattutto dove il database non sa annullare un DDL —
+    Oracle e MySQL fanno commit a ogni istruzione — ma anche altrove: una
+    transazione protegge dentro l'esecuzione, non dal pentimento del giorno dopo.
+    """
     os.makedirs(output_dir, exist_ok=True)
     written = []
     for target in (diff.snapshot1.env_name, diff.snapshot2.env_name):
         scripts = generate_sql_scripts(diff, target)
         if not any(scripts.values()):
             continue
+
         sql_path = os.path.join(output_dir, f"allinea_{slug(target)}.sql")
         write_sql_script(scripts, sql_path, target, diff, totali=totali)
         written.append(sql_path)
+
+        annullamento = generate_rollback_scripts(diff, target)
+        if any(annullamento.values()):
+            rollback_path = os.path.join(output_dir, f"annulla_{slug(target)}.sql")
+            write_sql_script(annullamento, rollback_path, target, diff,
+                             totali=totali, annullamento=True)
+            written.append(rollback_path)
     return written
 
 
@@ -68,17 +81,26 @@ def write_outputs(diff, output_dir: str, totali=None):
 
 
 def write_sql_script(scripts, filename: str, target_env: str,
-                     diff: DiffResult = None, totali=None) -> None:
+                     diff: DiffResult = None, totali=None,
+                     annullamento: bool = False) -> None:
     templates = templates_for(diff.snapshot_of(target_env).dialect) if diff else None
+
+    # Disfare vuol dire percorrere all'indietro: le viste e i vincoli prima
+    # delle tabelle, o si prova a togliere una tabella che qualcuno usa ancora.
+    sezioni = list(reversed(list(scripts))) if annullamento else list(scripts)
 
     with open(filename, "w", encoding="utf-8") as f:
         if diff is not None:
-            f.write(intestazione(diff, target_env, incluse=len(diff.all), totali=totali))
+            f.write(intestazione(diff, target_env, incluse=len(diff.all), totali=totali,
+                                 annullamento=annullamento))
             f.write("\n")
+        if annullamento:
+            f.write(_avviso_annullamento())
         if templates:
             f.write(_apertura_transazione(templates))
 
-        for section, statements in scripts.items():
+        for section in sezioni:
+            statements = scripts[section]
             if not statements:
                 continue
             f.write(f"-- === {SECTION_TITLES[section]} ===\n")
@@ -89,6 +111,13 @@ def write_sql_script(scripts, filename: str, target_env: str,
             f.write(templates["commit"] + "\n")
 
     logger.info("Script SQL salvato in '%s'.", filename)
+
+
+def _avviso_annullamento() -> str:
+    """Questo script cancella. Va detto prima, non in fondo."""
+    return ("-- ATTENZIONE: questo script ELIMINA gli oggetti creati dall'allineamento.\n"
+            "-- Vale solo se eseguito sull'ambiente allineato e prima di altre modifiche.\n"
+            "-- I dati scritti nelle colonne e nelle tabelle nuove vengono persi.\n\n")
 
 
 def _apertura_transazione(templates: dict) -> str:

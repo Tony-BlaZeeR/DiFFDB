@@ -202,12 +202,18 @@ def _connessione(ambiente):
 # --- utilita' --------------------------------------------------------------
 
 
-def _esegui(url, scripts):
+# Disfare vuol dire percorrere all'indietro: prima cio' che dipende, poi le
+# tabelle.
+SEZIONI_ALLINEAMENTO = ("sequences", "tables", "constraints", "views", "synonyms")
+SEZIONI_ANNULLAMENTO = ("synonyms", "views", "constraints", "tables", "sequences")
+
+
+def _esegui(url, scripts, sezioni=SEZIONI_ALLINEAMENTO):
     """Esegue lo script come lo eseguirebbe un DBA: nell'ordine del file."""
     eseguiti = []
     engine = create_engine(url)
     try:
-        for sezione in ("sequences", "tables", "constraints", "views", "synonyms"):
+        for sezione in sezioni:
             for blocco in scripts.get(sezione, []):
                 for statement in _istruzioni(blocco):
                     with engine.begin() as conn:
@@ -264,3 +270,35 @@ def _ignora(engine, statement):
             conn.execute(text(statement))
     except Exception:
         pass
+
+
+def test_annullare_riporta_l_ambiente_com_era(ambienti):
+    """Il contratto dell'annullamento: allineo, disfo, e l'impronta torna quella.
+
+    L'impronta copre l'intera struttura, quindi non basta che "sembri" tornata:
+    una colonna dimenticata o un indice rimasto la fanno cambiare.
+    """
+    from diffdb.diff_DB import generate_rollback_scripts
+    from diffdb.schema_snapshot import snapshot_connection
+    from diffdb.snapshot_io import fingerprint
+
+    prima = fingerprint(snapshot_connection(
+        ambienti.col.nome, ambienti.col.url, ambienti.col.schema))
+
+    diff = _confronta(ambienti)
+    _esegui(ambienti.col.url, generate_sql_scripts(diff, target_env=ambienti.col.nome))
+
+    dopo_allineamento = fingerprint(snapshot_connection(
+        ambienti.col.nome, ambienti.col.url, ambienti.col.schema))
+    assert dopo_allineamento != prima, "l'allineamento non ha cambiato niente"
+
+    # L'annullamento si ricava dallo stesso confronto di prima: e' lo scenario
+    # vero, in cui i due file vengono generati insieme.
+    annullamento = generate_rollback_scripts(diff, target_env=ambienti.col.nome)
+    eseguiti = _esegui(ambienti.col.url, annullamento, sezioni=SEZIONI_ANNULLAMENTO)
+
+    dopo = fingerprint(snapshot_connection(
+        ambienti.col.nome, ambienti.col.url, ambienti.col.schema))
+    assert dopo == prima, (
+        f"[{ambienti.dialetto}] dopo l'annullamento l'ambiente non e' tornato "
+        f"com'era.\n\nannullamento eseguito:\n" + "\n".join(eseguiti))

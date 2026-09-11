@@ -30,6 +30,13 @@ def normalize_dialect(dialect: str) -> str:
 
 query_templates = {
     "postgresql": {
+        "drop_table": "DROP TABLE {table};",
+        "drop_index": "DROP INDEX {index};",
+        "drop_constraint": "ALTER TABLE {table} DROP CONSTRAINT {name};",
+        "drop_foreign_key": None,   # usa drop_constraint
+        "drop_view": "DROP VIEW {name};",
+        "drop_sequence": "DROP SEQUENCE {name};",
+        "drop_synonym": None,
         # PostgreSQL sa annullare un DDL: lo script sta in una transazione.
         "begin": "BEGIN;",
         "commit": "COMMIT;",
@@ -47,6 +54,13 @@ query_templates = {
         "create_synonym": None,  # PostgreSQL non ha i sinonimi
     },
     "mysql": {
+        "drop_table": "DROP TABLE {table};",
+        "drop_index": "DROP INDEX {index} ON {table};",
+        "drop_constraint": "ALTER TABLE {table} DROP INDEX {name};",
+        "drop_foreign_key": "ALTER TABLE {table} DROP FOREIGN KEY {name};",
+        "drop_view": "DROP VIEW {name};",
+        "drop_sequence": None,
+        "drop_synonym": None,
         # MySQL fa commit implicito a ogni DDL: non c'e' transazione da aprire.
         "begin": None,
         "commit": None,
@@ -64,6 +78,13 @@ query_templates = {
         "create_synonym": None,
     },
     "oracle": {
+        "drop_table": "DROP TABLE {table};",
+        "drop_index": "DROP INDEX {index};",
+        "drop_constraint": "ALTER TABLE {table} DROP CONSTRAINT {name};",
+        "drop_foreign_key": None,   # usa drop_constraint
+        "drop_view": "DROP VIEW {name};",
+        "drop_sequence": "DROP SEQUENCE {name};",
+        "drop_synonym": "DROP SYNONYM {name};",
         # Oracle fa commit implicito a ogni DDL: non c'e' transazione da aprire.
         "begin": None,
         "commit": None,
@@ -82,6 +103,13 @@ query_templates = {
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
     },
     "mssql": {
+        "drop_table": "DROP TABLE {table};",
+        "drop_index": "DROP INDEX {index} ON {table};",
+        "drop_constraint": "ALTER TABLE {table} DROP CONSTRAINT {name};",
+        "drop_foreign_key": None,   # usa drop_constraint
+        "drop_view": "DROP VIEW {name};",
+        "drop_sequence": "DROP SEQUENCE {name};",
+        "drop_synonym": "DROP SYNONYM {name};",
         # SQL Server sa annullare un DDL: lo script sta in una transazione.
         "begin": "BEGIN TRANSACTION;",
         "commit": "COMMIT TRANSACTION;",
@@ -101,6 +129,13 @@ query_templates = {
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
     },
     "sqlite": {
+        "drop_table": "DROP TABLE {table};",
+        "drop_index": "DROP INDEX {index};",
+        "drop_constraint": None,
+        "drop_foreign_key": None,
+        "drop_view": "DROP VIEW {name};",
+        "drop_sequence": None,
+        "drop_synonym": None,
         # SQLite sa annullare un DDL.
         "begin": "BEGIN;",
         "commit": "COMMIT;",
