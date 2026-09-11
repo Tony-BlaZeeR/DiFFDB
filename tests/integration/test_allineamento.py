@@ -112,7 +112,13 @@ def test_rileva_le_differenze_attese(ambienti):
     assert ("column", MISSING) in trovate           # clienti.email
     assert ("column", TYPE_MISMATCH) in trovate     # clienti.nome
     assert ("index", MISSING) in trovate            # ix_clienti_email
-    assert ("unique", MISSING) in trovate           # uq_clienti_piva
+
+    # Il vincolo di unicita' su partita_iva: solo PostgreSQL lo riflette come
+    # vincolo. Oracle, MySQL e SQL Server lo realizzano con un indice unico e
+    # SQLAlchemy lo riporta come tale. Il risultato e' lo stesso — l'indice
+    # unico impone l'unicita' — ma la categoria cambia, e chi legge il report
+    # su Oracle vedra' "indice" dove si aspettava "unique".
+    assert ("unique", MISSING) in trovate or ("index", MISSING) in trovate
     assert ("view", MISSING) in trovate             # clienti_attivi
     if SEQUENZE[ambienti.dialetto]:
         assert ("sequence", MISSING) in trovate
