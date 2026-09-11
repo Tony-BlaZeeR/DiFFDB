@@ -32,6 +32,10 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
   secondo prestito della stessa connessione dal pool, non solo al primo (e su
   Oracle, il caso che passare `call_timeout` come argomento di connessione
   invece che come proprieta' post-connessione rompeva la connessione stessa).
+- **`--dry-run`**: mostra le differenze come sempre ma non scrive niente su
+  disco — nessuno script, nessun Excel, nessuno snapshot, nessuna regola
+  accettata. Utile per vedere cosa farebbe un comando prima di lasciarlo
+  toccare il filesystem, specialmente in pipeline.
 
 ### Corretto
 
@@ -40,6 +44,13 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
   quadratico in Qt. Su 100.000 differenze si passa da 7-8 secondi di
   interfaccia bloccata a poco piu' di uno, costruendo le righe senza genitore
   e attaccandole tutte insieme.
+- `--accept` non muta piu' sul posto `rules.NESSUNA`: e' un singleton
+  condiviso da tutto il processo, usato come regole predefinite in una
+  dozzina di firme di funzione. Mutarlo inquinava ogni chiamata successiva
+  che ricadeva sullo stesso default per il resto del processo — invisibile
+  in CLI (un processo per comando), ma reale nella GUI, che resta aperta e
+  richiama le stesse funzioni piu' volte. Scoperto da un test di `--dry-run`
+  che si e' trovato le regole di un test precedente.
 
 ## [1.2.0]
 

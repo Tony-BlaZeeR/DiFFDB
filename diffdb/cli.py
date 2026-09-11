@@ -3,6 +3,7 @@
     python -m diffdb.cli --list
     python -m diffdb.cli SVI COL --out ./report
     python -m diffdb.cli SVI COL --fail-on-diff        # esce con 1 se ci sono differenze
+    python -m diffdb.cli SVI COL --dry-run             # solo le differenze, niente su disco
 
 Gli ambienti si indicano per nome (come in connections.json), passando
 direttamente due URL SQLAlchemy, oppure indicando uno snapshot salvato:
@@ -13,6 +14,7 @@ direttamente due URL SQLAlchemy, oppure indicando uno snapshot salvato:
 """
 
 import argparse
+import dataclasses
 import getpass
 import logging
 import sys
@@ -70,6 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--accept", action="store_true",
                         help="Aggiunge le differenze trovate alle accettate, e non le "
                              "mostra piu' finche' non cambiano")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Mostra le differenze ma non scrive niente su disco "
+                             "(nessuno script, nessun Excel, nessuno snapshot, "
+                             "nessuna regola accettata)")
     return parser
 
 
@@ -102,11 +108,22 @@ def accetta(diff, args, regole: rules.Regole) -> int:
 
     nuove = {rules.chiave(d) for d in diff.all}
     aggiunte = nuove - regole.accettate
-    regole.accettate |= nuove
-    rules.salva(regole, percorso)
+
+    if args.dry_run:
+        print(f"[dry-run] {len(aggiunte)} differenze verrebbero aggiunte alle "
+              f"accettate in {percorso}. Nessun file scritto.")
+        return 0
+
+    # Non si muta regole.accettate sul posto: quando non c'e' un file di
+    # regole, carica_regole() restituisce rules.NESSUNA, un singleton
+    # condiviso da tutto il processo (usato come default in una dozzina di
+    # firme) — mutarlo qui inquinerebbe ogni chiamata successiva, in
+    # qualunque altra parte del programma, per il resto del processo.
+    aggiornata = dataclasses.replace(regole, accettate=regole.accettate | nuove)
+    rules.salva(aggiornata, percorso)
 
     print(f"{len(aggiunte)} differenze aggiunte alle accettate in {percorso}.")
-    print(f"Totale accettate: {len(regole.accettate)}.")
+    print(f"Totale accettate: {len(aggiornata.accettate)}.")
     return 0
 
 
@@ -222,6 +239,10 @@ def main(argv=None) -> int:
             return 2
         source = resolve(args.env1, args.schema1, connections)
         snapshot = snapshot_of(source, carica_regole(args))
+        if args.dry_run:
+            print(f"[dry-run] Snapshot di {snapshot.env_name} verrebbe salvato in "
+                  f"{args.snapshot}. Nessun file scritto.")
+            return 0
         path = save(snapshot, args.snapshot, source=getattr(source, "conn_string", None))
         print(f"Snapshot di {snapshot.env_name} salvato in {path}")
         return 0
@@ -250,11 +271,14 @@ def main(argv=None) -> int:
         detail = f" - {d.detail}" if d.detail else ""  # ASCII: la console Windows non e' UTF-8
         print(f"[{d.change}] {d.kind} {d.name}{field}{target}{detail}")
 
-    for path in write_outputs(diff, args.out):
-        print(f"Scritto: {path}")
-
     coda = f" ({diff.accettate} gia' accettate)" if diff.accettate else ""
-    print(f"\n{len(diff.all)} differenze fra {env1} e {env2}.{coda}")
+    if args.dry_run:
+        print(f"\n[dry-run] {len(diff.all)} differenze fra {env1} e {env2}.{coda} "
+              f"Nessuno script o report scritto in {args.out}.")
+    else:
+        for path in write_outputs(diff, args.out):
+            print(f"Scritto: {path}")
+        print(f"\n{len(diff.all)} differenze fra {env1} e {env2}.{coda}")
     return 1 if args.fail_on_diff else 0
 
 
