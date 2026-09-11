@@ -43,7 +43,7 @@ from diffdb import __version__
 from diffdb.connections import Connection
 from diffdb.diff_DB import DiffResult, compare_snapshots, default_signature
 from diffdb.rules import NESSUNA, a_dizionario, da_dizionario
-from diffdb.schema_snapshot import SequenceSpec, Snapshot, snapshot_connection
+from diffdb.schema_snapshot import SequenceSpec, Snapshot, TriggerSpec, snapshot_connection
 from diffdb.urls import mask_password
 
 logger = logging.getLogger(__name__)
@@ -181,7 +181,7 @@ def save(snapshot: Snapshot, path, source: str | None = None) -> Path:
 # descrivendo insiemi diversi, e `--verify` direbbe "tutto a posto" su uno
 # script generato con altre regole.
 CHIAVI_STRUTTURA = ("dialect", "schema", "tables", "views", "sequences", "synonyms",
-                    "regole")
+                    "triggers", "regole")
 
 
 def fingerprint(snapshot: Snapshot) -> str:
@@ -223,6 +223,10 @@ def to_dict(snapshot: Snapshot, source: str | None = None) -> dict:
             for name, spec in sorted(snapshot.sequences.items())
         },
         "synonyms": dict(sorted(snapshot.synonyms.items())),
+        "triggers": {
+            name: {"table": spec.table, "definition": spec.definition}
+            for name, spec in sorted(snapshot.triggers.items())
+        },
         "regole": _filtri(snapshot.regole),
     }
     payload["fingerprint"] = impronta_di(payload)
@@ -392,6 +396,10 @@ def from_dict(payload: dict, origin: str = "snapshot") -> Snapshot:
         for name, spec in (payload.get("sequences") or {}).items()
     }
     snapshot.synonyms = dict(payload.get("synonyms") or {})
+    snapshot.triggers = {
+        name: TriggerSpec(name=name, table=spec.get("table"), definition=spec.get("definition", ""))
+        for name, spec in (payload.get("triggers") or {}).items()
+    }
 
     # Le regole tornano indietro per intero: `fingerprint()` le ricalcola, e
     # senza di loro l'impronta del file e quella dello snapshot riletto

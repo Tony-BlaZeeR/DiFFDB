@@ -41,6 +41,44 @@ MSSQL_CHECK_QUERY = (
     "WHERE SCHEMA_NAME(t.schema_id) = COALESCE(:schema, SCHEMA_NAME())"
 )
 
+# Trigger: nessun dialetto li riflette via SQLAlchemy (l'Inspector non ha
+# nemmeno un get_trigger_names). Dove il motore sa ricostruire il CREATE
+# TRIGGER completo lo si usa (pg_get_triggerdef, DBMS_METADATA.GET_DDL,
+# sys.sql_modules): il testo che ne esce e' gia' eseguibile com'e', come per
+# le viste. MySQL non ha un equivalente: si ricostruisce con SHOW CREATE
+# TRIGGER, un'interrogazione per trigger (vedi _fetch_mysql_triggers) — lo
+# stesso compromesso gia' accettato per i CHECK su SQL Server.
+#
+# Su Oracle ci si ferma ai trigger su tabella (base_object_type = 'TABLE'):
+# quelli su vista (INSTEAD OF) sono rari e restano fuori. Su PostgreSQL un
+# nome di trigger e' unico per tabella, non per schema: due tabelle diverse
+# possono avere un trigger con lo stesso nome, e qui si confondono nello
+# stesso dizionario. Limite noto, non risolto: e' lo stesso compromesso della
+# chiave per nome usato per viste, sequenze e sinonimi.
+TRIGGER_QUERIES = {
+    "postgresql": (
+        "SELECT t.tgname, c.relname, pg_get_triggerdef(t.oid) "
+        "FROM pg_trigger t "
+        "JOIN pg_class c ON c.oid = t.tgrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE NOT t.tgisinternal "
+        "AND n.nspname = COALESCE(:schema, current_schema())"
+    ),
+    "oracle": (
+        "SELECT trigger_name, table_name, "
+        "DBMS_METADATA.GET_DDL('TRIGGER', trigger_name, owner) "
+        "FROM all_triggers WHERE owner = NVL(:schema, USER) AND base_object_type = 'TABLE'"
+    ),
+    "mssql": (
+        "SELECT tr.name, OBJECT_NAME(tr.parent_id), sm.definition "
+        "FROM sys.triggers tr "
+        "JOIN sys.sql_modules sm ON sm.object_id = tr.object_id "
+        "WHERE tr.parent_class = 1 "  # 1 = trigger DML su tabella/vista, non su DB/server
+        "AND OBJECT_SCHEMA_NAME(tr.parent_id) = COALESCE(:schema, SCHEMA_NAME())"
+    ),
+    "sqlite": "SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'trigger'",
+}
+
 # I sinonimi esistono solo su Oracle e SQL Server.
 SYNONYM_QUERIES = {
     "oracle": (
@@ -83,6 +121,18 @@ class SequenceSpec:
 
 
 @dataclass
+class TriggerSpec:
+    """Un trigger: la definizione e' gia' un CREATE TRIGGER completo ed
+    eseguibile nel dialetto di provenienza. La tabella serve a parte perche'
+    PostgreSQL la richiede nel DROP TRIGGER (`DROP TRIGGER nome ON tabella`),
+    a differenza degli altri motori."""
+
+    name: str
+    table: str | None
+    definition: str
+
+
+@dataclass
 class Snapshot:
     """Struttura di un ambiente in un dato momento."""
 
@@ -94,6 +144,7 @@ class Snapshot:
     views: dict[str, str] = field(default_factory=dict)        # nome -> definizione
     sequences: dict[str, SequenceSpec] = field(default_factory=dict)
     synonyms: dict[str, str] = field(default_factory=dict)     # nome -> oggetto puntato
+    triggers: dict[str, TriggerSpec] = field(default_factory=dict)
     regole: Regole = field(default_factory=Regole)
 
     @property
@@ -204,10 +255,13 @@ def take_snapshot(env_name: str, engine: Engine, schema: str | None = None,
         snapshot.synonyms = {
             nome: bersaglio for nome, bersaglio in _fetch_synonyms(engine, schema).items()
             if regole.sinonimo_incluso(nome)}
+    if regole.categoria_inclusa("triggers"):
+        snapshot.triggers = _fetch_triggers(engine, schema)
 
-    logger.info("Struttura di '%s' letta: %d tabelle, %d viste, %d sequenze, %d sinonimi.",
-                env_name, len(snapshot.tables), len(snapshot.views),
-                len(snapshot.sequences), len(snapshot.synonyms))
+    logger.info(
+        "Struttura di '%s' letta: %d tabelle, %d viste, %d sequenze, %d sinonimi, %d trigger.",
+        env_name, len(snapshot.tables), len(snapshot.views),
+        len(snapshot.sequences), len(snapshot.synonyms), len(snapshot.triggers))
     return snapshot
 
 
@@ -471,6 +525,65 @@ def _fetch_synonyms(engine: Engine, schema: str | None) -> dict[str, str]:
             return {row[0]: row[1] for row in conn.execute(text(query), params)}
     except SQLAlchemyError as exc:
         logger.warning("Lettura dei sinonimi fallita: %s", exc)
+        return {}
+
+
+def _leggi_clob(valore) -> str:
+    """DBMS_METADATA.GET_DDL torna un CLOB: a seconda della dimensione e della
+    configurazione del driver puo' arrivare come str o come oggetto LOB da
+    leggere esplicitamente. Non verificabile in locale (nessuna istanza
+    Oracle): gestisce entrambi i casi invece di assumere quale capiti."""
+    return valore.read() if hasattr(valore, "read") else (valore or "")
+
+
+def _fetch_triggers(engine: Engine, schema: str | None) -> dict[str, TriggerSpec]:
+    """Trigger completi. Il testo catturato e' gia' un CREATE TRIGGER
+    eseguibile nel dialetto di provenienza: la generazione dello script lo
+    riusa com'e', come per le viste."""
+    dialetto = engine.dialect.name
+    if dialetto == "mysql":
+        return _fetch_mysql_triggers(engine, schema)
+
+    query = TRIGGER_QUERIES.get(dialetto)
+    if query is None:
+        return {}
+
+    try:
+        with engine.connect() as conn:
+            params = {"schema": schema} if ":schema" in query else {}
+            righe = conn.execute(text(query), params).fetchall()
+    except SQLAlchemyError as exc:
+        logger.warning("Lettura dei trigger fallita: %s", exc)
+        return {}
+
+    return {
+        nome: TriggerSpec(name=nome, table=tabella, definition=_leggi_clob(definizione))
+        for nome, tabella, definizione in righe
+    }
+
+
+def _fetch_mysql_triggers(engine: Engine, schema: str | None) -> dict[str, TriggerSpec]:
+    """MySQL non ha un equivalente di pg_get_triggerdef: SHOW CREATE TRIGGER
+    da' il testo completo, ma un'interrogazione per trigger, non una sola per
+    tutto lo schema (lo stesso compromesso gia' accettato per i CHECK di SQL
+    Server)."""
+    quote = engine.dialect.identifier_preparer.quote
+    try:
+        with engine.connect() as conn:
+            nomi = conn.execute(text(
+                "SELECT trigger_name, event_object_table FROM information_schema.triggers "
+                "WHERE trigger_schema = COALESCE(:schema, DATABASE())"
+            ), {"schema": schema}).fetchall()
+
+            triggers = {}
+            for nome, tabella in nomi:
+                # SHOW CREATE non accetta parametri bind: il nome viene dal
+                # catalogo del motore stesso, ma si quota comunque per correttezza.
+                riga = conn.execute(text(f"SHOW CREATE TRIGGER {quote(nome)}")).fetchone()
+                triggers[nome] = TriggerSpec(name=nome, table=tabella, definition=riga[2])
+            return triggers
+    except SQLAlchemyError as exc:
+        logger.warning("Lettura dei trigger fallita: %s", exc)
         return {}
 
 

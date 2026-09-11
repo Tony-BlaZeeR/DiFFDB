@@ -11,14 +11,18 @@ allinearli. Con interfaccia grafica e con una CLI da mettere in pipeline.
 - **Indici, foreign key, vincoli di unicita', CHECK e chiavi primarie**
 - Viste (presenza **e corpo della definizione**), sequenze (con i loro valori
   reali di START/INCREMENT) e sinonimi (Oracle e SQL Server)
+- Trigger (presenza **e corpo della definizione**): nessun dialetto li riflette
+  via SQLAlchemy, si leggono con una query diretta sul catalogo di sistema
 
 ## Cosa produce
 
 - `differenze_ambienti.xlsx` — un foglio per tabelle, vincoli, viste, sequenze,
-  sinonimi. Ogni riga dice *cosa* differisce, *dove* manca e con che *dettaglio*.
+  sinonimi, trigger. Ogni riga dice *cosa* differisce, *dove* manca e con che
+  *dettaglio*.
 - `allinea_<ambiente>.sql` — uno script **per ogni direzione**, con SQL eseguibile
   (CREATE TABLE con colonne, tipi e FK; ALTER TABLE; CREATE INDEX; ADD CONSTRAINT;
-  CREATE VIEW; CREATE SEQUENCE), compilato sul dialetto dell'ambiente da allineare.
+  CREATE VIEW; CREATE SEQUENCE; CREATE TRIGGER), compilato sul dialetto
+  dell'ambiente da allineare.
 - `annulla_<ambiente>.sql` — come disfare quell'allineamento (vedi sotto).
 - `snapshot.json` — la struttura di un ambiente congelata su file (vedi sotto).
 
@@ -287,8 +291,8 @@ python -m diffdb.cli --verify allinea_prod.sql PROD
 Esce con 0 se l'ambiente e' ancora quello di quando lo script e' stato generato,
 con 1 se e' cambiato nel frattempo — nel qual caso lo script non e' piu' valido e
 va rigenerato. L'impronta copre la struttura (tabelle, viste, sequenze, sinonimi,
-dialetto e schema): rinominare un ambiente o rifare lo snapshot un minuto dopo
-non la cambia.
+trigger, dialetto e schema): rinominare un ambiente o rifare lo snapshot un
+minuto dopo non la cambia.
 
 Lo stesso vale per l'Excel, che ha un foglio **Informazioni**, e per gli snapshot,
 che portano la propria impronta dentro il file. Se esporti solo una parte delle
@@ -518,6 +522,22 @@ Su PostgreSQL, MySQL, Oracle e SQL Server i CHECK si confrontano per
 condizione (normalizzata), non per nome: i nomi sono spesso autogenerati dal
 motore e cambiano da un ambiente all'altro anche quando il vincolo e' lo
 stesso.
+
+I **trigger** non li riflette nessun dialetto via SQLAlchemy (l'Inspector non
+ha nemmeno un metodo per elencarli): si leggono con il modo nativo di ogni
+motore di ricostruire il CREATE TRIGGER completo — `pg_get_triggerdef` su
+PostgreSQL, `DBMS_METADATA.GET_DDL` su Oracle, `sys.sql_modules` su SQL
+Server, `SHOW CREATE TRIGGER` (un'interrogazione per trigger) su MySQL. Il
+confronto e l'allineamento sono sempre DROP + CREATE, mai un CREATE OR
+REPLACE: MySQL non lo supporta per i trigger in nessuna versione, e un solo
+percorso verificabile su tutti i motori batte un'ottimizzazione che varia da
+uno all'altro.
+
+Limite noto: su PostgreSQL e Oracle un trigger richiama una funzione o una
+procedura separata — il corpo che conta e' spesso li', non nel testo del
+trigger stesso, che puo' restare identico anche se la logica cambia.
+Confrontare anche le funzioni e le procedure e' un lavoro a parte, non ancora
+fatto: per ora DiFFDB vede il legame "trigger -> funzione", non la funzione.
 
 ## Struttura
 

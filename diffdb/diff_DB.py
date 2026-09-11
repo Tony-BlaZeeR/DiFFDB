@@ -71,12 +71,14 @@ class DiffResult:
     views: list[Difference] = field(default_factory=list)
     sequences: list[Difference] = field(default_factory=list)
     synonyms: list[Difference] = field(default_factory=list)
+    triggers: list[Difference] = field(default_factory=list)
     regole: Regole = field(default_factory=Regole)
     accettate: int = 0        # differenze nascoste perche' gia' accettate
 
     @property
     def all(self) -> list[Difference]:
-        return self.tables + self.constraints + self.views + self.sequences + self.synonyms
+        return (self.tables + self.constraints + self.views + self.sequences
+                + self.synonyms + self.triggers)
 
     @property
     def is_empty(self) -> bool:
@@ -91,6 +93,7 @@ class DiffResult:
             "views": self.views,
             "sequences": self.sequences,
             "synonyms": self.synonyms,
+            "triggers": self.triggers,
         }
 
     def subset(self, keep) -> "DiffResult":
@@ -110,6 +113,7 @@ class DiffResult:
             views=[d for d in self.views if id(d) in ids],
             sequences=[d for d in self.sequences if id(d) in ids],
             synonyms=[d for d in self.synonyms if id(d) in ids],
+            triggers=[d for d in self.triggers if id(d) in ids],
         )
 
     def snapshot_of(self, env_name: str) -> Snapshot:
@@ -169,6 +173,7 @@ def compare_snapshots(snap1: Snapshot, snap2: Snapshot,
     result.views = _compare_views(snap1, snap2)
     result.sequences = _compare_sequences(snap1, snap2)
     result.synonyms = _compare_synonyms(snap1, snap2)
+    result.triggers = _compare_triggers(snap1, snap2)
     return _applica_regole(result, regole)
 
 
@@ -181,7 +186,7 @@ def _applica_regole(result: DiffResult, regole: Regole) -> DiffResult:
     if regole.vuote:
         return result
 
-    for categoria in ("tables", "constraints", "views", "sequences", "synonyms"):
+    for categoria in ("tables", "constraints", "views", "sequences", "synonyms", "triggers"):
         differenze = getattr(result, categoria)
         if not regole.categoria_inclusa(categoria):
             setattr(result, categoria, [])
@@ -297,6 +302,22 @@ def _compare_synonyms(snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
     return diffs
 
 
+def _compare_triggers(snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
+    e1, e2 = snap1.env_name, snap2.env_name
+    diffs = _compare_names("trigger", set(snap1.triggers), set(snap2.triggers), e1, e2)
+
+    # Confronto affidabile fra ambienti dello stesso dialetto, come per le viste:
+    # il testo e' quello che il motore stesso ricostruisce, non quello scritto
+    # a mano, e due motori diversi lo formattano in modo diverso.
+    for name in sorted(set(snap1.triggers) & set(snap2.triggers)):
+        body1 = snap1.triggers[name].definition
+        body2 = snap2.triggers[name].definition
+        if normalize_sql(body1) != normalize_sql(body2):
+            diffs.append(Difference("trigger", name, DEFINITION_MISMATCH,
+                                    detail="il corpo del trigger e' diverso nei due ambienti"))
+    return diffs
+
+
 def _compare_names(kind, names1, names2, env1, env2) -> list[Difference]:
     diffs = []
     for name in sorted(set(names2) - set(names1)):
@@ -350,7 +371,8 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
         """
         return f"{quote(target.schema)}.{quote(name)}" if target.schema else quote(name)
 
-    scripts = {"tables": [], "constraints": [], "views": [], "sequences": [], "synonyms": []}
+    scripts = {"tables": [], "constraints": [], "views": [], "sequences": [],
+               "synonyms": [], "triggers": []}
 
     # Le tabelle nuove vanno create prima di quelle che le referenziano: le
     # foreign key sono dentro il CREATE TABLE, e in ordine alfabetico uno script
@@ -457,6 +479,19 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
             scripts["synonyms"].append(template.format(
                 name=qualify(d.name), target=source.synonyms.get(d.name, "?")))
 
+    for d in diff.triggers:
+        if d.missing_in != target_env and d.change != DEFINITION_MISMATCH:
+            continue  # il trigger manca nell'altro ambiente, non nel target: niente da fare qui
+        spec = source.triggers.get(d.name)
+        if spec is None or not spec.definition.strip():
+            scripts["triggers"].append(
+                f"-- Definizione del trigger {d.name} non leggibile da "
+                f"{source.env_name}: va copiato a mano")
+        elif d.change == DEFINITION_MISMATCH:
+            scripts["triggers"].append(_trigger_replace_ddl(spec, templates, qualify))
+        else:
+            scripts["triggers"].append(_trigger_create_ddl(spec))
+
     return scripts
 
 
@@ -485,7 +520,8 @@ def generate_rollback_scripts(diff: DiffResult, target_env: str) -> dict[str, li
     def qualify(name: str) -> str:
         return f"{quote(target.schema)}.{quote(name)}" if target.schema else quote(name)
 
-    scripts = {"tables": [], "constraints": [], "views": [], "sequences": [], "synonyms": []}
+    scripts = {"tables": [], "constraints": [], "views": [], "sequences": [],
+               "synonyms": [], "triggers": []}
 
     # Prima i vincoli e gli indici, poi le tabelle: l'ordine inverso
     # dell'andata, o si prova a togliere una tabella che qualcuno referenzia.
@@ -533,6 +569,22 @@ def generate_rollback_scripts(diff: DiffResult, target_env: str) -> dict[str, li
     for d in diff.synonyms:
         if d.missing_in == target_env and templates["drop_synonym"]:
             scripts["synonyms"].append(templates["drop_synonym"].format(name=qualify(d.name)))
+
+    for d in diff.triggers:
+        if d.missing_in == target_env and templates["drop_trigger"]:
+            # Il trigger l'ha aggiunto l'allineamento: la tabella sta ancora
+            # solo nella sorgente, il target non lo aveva prima di eseguirlo.
+            spec = source.triggers.get(d.name)
+            tabella = qualify(spec.table) if spec and spec.table else "?"
+            scripts["triggers"].append(
+                templates["drop_trigger"].format(name=qualify(d.name), table=tabella))
+        elif d.change == DEFINITION_MISMATCH:
+            spec = target.triggers.get(d.name)
+            scripts["triggers"].append(
+                _trigger_replace_ddl(spec, templates, qualify)
+                if spec and spec.definition.strip()
+                else f"-- Il trigger {d.name} e' stato riscritto: il corpo precedente non "
+                     f"e' leggibile da qui, va ripreso a mano.")
 
     return {sezione: [i for i in istruzioni if i] for sezione, istruzioni in scripts.items()}
 
@@ -760,6 +812,27 @@ def _replace_view_ddl(name, definition: str, templates: dict, qualify) -> str:
                           count=1, flags=re.IGNORECASE)
         return create
     return f"DROP VIEW {qualify(name)};\n{create}"
+
+
+def _trigger_create_ddl(spec) -> str:
+    """La definizione catturata e' gia' un CREATE TRIGGER completo ed
+    eseguibile (pg_get_triggerdef, DBMS_METADATA.GET_DDL, sys.sql_modules,
+    SHOW CREATE TRIGGER): a differenza delle viste non serve ricostruirlo,
+    solo assicurarsi che finisca con un unico punto e virgola."""
+    return spec.definition.strip().rstrip(";") + ";"
+
+
+def _trigger_replace_ddl(spec, templates: dict, qualify) -> str:
+    """Sempre DROP + CREATE, mai un tentativo di CREATE OR REPLACE.
+
+    Oracle lo supporta, ma MySQL non lo ha per i trigger in nessuna versione:
+    un solo percorso verificabile su tutti i motori batte un'ottimizzazione
+    che varia da uno all'altro e che qui non si puo' verificare dal vivo su
+    tre dei quattro.
+    """
+    drop = templates["drop_trigger"].format(
+        name=qualify(spec.name), table=qualify(spec.table) if spec.table else "?")
+    return f"{drop}\n{_trigger_create_ddl(spec)}"
 
 
 def _default_ddl(d: Difference, source: Snapshot, target: Snapshot, templates: dict,

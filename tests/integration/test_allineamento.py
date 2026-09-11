@@ -17,7 +17,13 @@ from sqlalchemy import MetaData, create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from diffdb import snapshot_io
-from diffdb.diff_DB import MISSING, TYPE_MISMATCH, compare_environments, generate_sql_scripts
+from diffdb.diff_DB import (
+    DEFINITION_MISMATCH,
+    MISSING,
+    TYPE_MISMATCH,
+    compare_environments,
+    generate_sql_scripts,
+)
 from diffdb.schema_snapshot import snapshot_connection
 
 pytestmark = pytest.mark.integration
@@ -210,7 +216,7 @@ def _connessione(ambiente):
 
 # Disfare vuol dire percorrere all'indietro: prima cio' che dipende, poi le
 # tabelle.
-SEZIONI_ALLINEAMENTO = ("sequences", "tables", "constraints", "views", "synonyms")
+SEZIONI_ALLINEAMENTO = ("sequences", "tables", "constraints", "views", "synonyms", "triggers")
 SEZIONI_ANNULLAMENTO = ("synonyms", "views", "constraints", "tables", "sequences")
 
 
@@ -431,6 +437,135 @@ def test_la_variabile_di_timeout_regge_al_secondo_prestito(coppia):
         assert valore == 2000, (
             f"[{coppia.dialetto}] al secondo prestito max_execution_time e' "
             f"{valore}, non 2000")
+    finally:
+        engine.dispose()
+
+
+# --- trigger -----------------------------------------------------------------
+
+# La tabella e, dove serve, la funzione che il trigger richiama: creati in
+# entrambi gli ambienti, perche' qui si verifica il trigger, non la funzione
+# (le funzioni/procedure sono un'altra categoria, non ancora confrontata). Su
+# PostgreSQL il trigger e' solo il legame "BEFORE INSERT -> esegui questa
+# funzione": la funzione deve preesistere nel target perche' lo script generato
+# funzioni, esattamente come un CREATE VIEW richiede che le tabelle che
+# referenzia esistano gia'.
+TRIGGER_SETUP = {
+    "postgresql": [
+        "CREATE TABLE trg_tbl (id INTEGER PRIMARY KEY, val INTEGER)",
+        "CREATE OR REPLACE FUNCTION trg_tbl_fn() RETURNS trigger AS "
+        "$$ BEGIN NEW.val := NEW.val + 1; RETURN NEW; END; $$ LANGUAGE plpgsql",
+    ],
+    "mysql": ["CREATE TABLE trg_tbl (id INTEGER PRIMARY KEY, val INTEGER)"],
+    "mssql": ["CREATE TABLE trg_tbl (id INTEGER PRIMARY KEY, val INTEGER)"],
+    "oracle": ["CREATE TABLE trg_tbl (id NUMBER(10) PRIMARY KEY, val NUMBER(10))"],
+}
+
+TRIGGER_DDL = {
+    "postgresql": ("CREATE TRIGGER trg_tbl_trg BEFORE INSERT ON trg_tbl "
+                   "FOR EACH ROW EXECUTE FUNCTION trg_tbl_fn()"),
+    "mysql": ("CREATE TRIGGER trg_tbl_trg BEFORE INSERT ON trg_tbl "
+              "FOR EACH ROW SET NEW.val = NEW.val + 1"),
+    "mssql": ("CREATE TRIGGER trg_tbl_trg ON trg_tbl AFTER INSERT AS "
+              "UPDATE trg_tbl SET val = val + 1 WHERE id IN (SELECT id FROM inserted)"),
+    "oracle": ("CREATE TRIGGER trg_tbl_trg BEFORE INSERT ON trg_tbl FOR EACH ROW "
+               "BEGIN :NEW.val := :NEW.val + 1; END;"),
+}
+
+
+def _prepara_ambiente_trigger(url, schema, dialetto, con_trigger: bool):
+    engine = create_engine(url)
+    try:
+        _svuota(engine, schema)
+        with engine.begin() as conn:
+            for statement in TRIGGER_SETUP[dialetto]:
+                conn.execute(text(statement))
+            if con_trigger:
+                conn.execute(text(TRIGGER_DDL[dialetto]))
+    finally:
+        engine.dispose()
+
+
+def test_il_trigger_si_allinea_e_funziona(coppia):
+    """Come per le viste: il confronto rileva il trigger mancante, lo script
+    generato lo crea, e il trigger creato funziona davvero, non solo esiste."""
+    _prepara_ambiente_trigger(coppia.svi.url, coppia.svi.schema, coppia.dialetto,
+                              con_trigger=True)
+    _prepara_ambiente_trigger(coppia.col.url, coppia.col.schema, coppia.dialetto,
+                              con_trigger=False)
+
+    diff = _confronta(coppia)
+    trovati = [d for d in diff.triggers if d.name == "trg_tbl_trg"]
+    assert [(d.change, d.missing_in) for d in trovati] == [(MISSING, coppia.col.nome)]
+
+    scripts = generate_sql_scripts(diff, target_env=coppia.col.nome)
+    eseguiti = _esegui(coppia.col.url, scripts, sezioni=("triggers",))
+    assert eseguiti, "lo script del trigger era vuoto"
+
+    engine = create_engine(coppia.col.url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO trg_tbl (id, val) VALUES (1, 10)"))
+            valore = conn.execute(text("SELECT val FROM trg_tbl WHERE id = 1")).scalar()
+        assert int(valore) == 11, "il trigger esiste ma non ha incrementato il valore"
+    finally:
+        engine.dispose()
+
+    residue = [d for d in _confronta(coppia).triggers if d.name == "trg_tbl_trg"]
+    assert residue == []
+
+
+TRIGGER_CORPO_DIVERSO = {
+    "mysql": ("CREATE TRIGGER trg_tbl_trg BEFORE INSERT ON trg_tbl "
+              "FOR EACH ROW SET NEW.val = NEW.val - 1"),
+    "mssql": ("CREATE TRIGGER trg_tbl_trg ON trg_tbl AFTER INSERT AS "
+              "UPDATE trg_tbl SET val = val - 1 WHERE id IN (SELECT id FROM inserted)"),
+    "oracle": ("CREATE TRIGGER trg_tbl_trg BEFORE INSERT ON trg_tbl FOR EACH ROW "
+               "BEGIN :NEW.val := :NEW.val - 1; END;"),
+}
+
+
+def test_corpo_del_trigger_diverso_si_rileva_e_si_corregge(coppia):
+    """Stesso nome, stessa tabella, corpo diverso: DROP + CREATE, mai un
+    CREATE OR REPLACE (MySQL non lo ha per i trigger in nessuna versione).
+
+    Non su PostgreSQL: li' il corpo che conta e' nella funzione richiamata,
+    non nel testo del trigger stesso (che resterebbe identico), e le funzioni
+    sono un'altra categoria — non ancora confrontata.
+    """
+    dialetto = coppia.dialetto
+    if dialetto not in TRIGGER_CORPO_DIVERSO:
+        pytest.skip(f"su {dialetto} il corpo del trigger non e' nel testo del "
+                    f"trigger stesso (vedi il docstring)")
+
+    _prepara_ambiente_trigger(coppia.svi.url, coppia.svi.schema, dialetto, con_trigger=True)
+    _prepara_ambiente_trigger(coppia.col.url, coppia.col.schema, dialetto, con_trigger=False)
+
+    engine = create_engine(coppia.col.url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(TRIGGER_CORPO_DIVERSO[dialetto]))
+    finally:
+        engine.dispose()
+
+    diff = _confronta(coppia)
+    trovati = [d for d in diff.triggers if d.name == "trg_tbl_trg"]
+    assert [d.change for d in trovati] == [DEFINITION_MISMATCH]
+
+    scripts = generate_sql_scripts(diff, target_env=coppia.col.nome)
+    joined = "\n".join(scripts["triggers"])
+    assert "DROP TRIGGER" in joined
+
+    eseguiti = _esegui(coppia.col.url, scripts, sezioni=("triggers",))
+    assert eseguiti
+
+    engine = create_engine(coppia.col.url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO trg_tbl (id, val) VALUES (1, 10)"))
+            valore = conn.execute(text("SELECT val FROM trg_tbl WHERE id = 1")).scalar()
+        assert int(valore) == 11, (
+            "dopo la correzione deve incrementare come in SVI, non decrementare")
     finally:
         engine.dispose()
 

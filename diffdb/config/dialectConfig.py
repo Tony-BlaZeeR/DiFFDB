@@ -36,6 +36,7 @@ query_templates = {
         "drop_constraint": "ALTER TABLE {table} DROP CONSTRAINT {name};",
         "drop_foreign_key": None,   # usa drop_constraint
         "drop_view": "DROP VIEW {name};",
+        "drop_trigger": "DROP TRIGGER {name} ON {table};",
         "drop_sequence": "DROP SEQUENCE {name};",
         "drop_synonym": None,
         # PostgreSQL sa annullare un DDL: lo script sta in una transazione.
@@ -61,6 +62,7 @@ query_templates = {
         "drop_constraint": "ALTER TABLE {table} DROP INDEX {name};",
         "drop_foreign_key": "ALTER TABLE {table} DROP FOREIGN KEY {name};",
         "drop_view": "DROP VIEW {name};",
+        "drop_trigger": "DROP TRIGGER {name};",
         "drop_sequence": None,
         "drop_synonym": None,
         # MySQL fa commit implicito a ogni DDL: non c'e' transazione da aprire.
@@ -86,6 +88,7 @@ query_templates = {
         "drop_constraint": "ALTER TABLE {table} DROP CONSTRAINT {name};",
         "drop_foreign_key": None,   # usa drop_constraint
         "drop_view": "DROP VIEW {name};",
+        "drop_trigger": "DROP TRIGGER {name};",
         "drop_sequence": "DROP SEQUENCE {name};",
         "drop_synonym": "DROP SYNONYM {name};",
         # Oracle fa commit implicito a ogni DDL: non c'e' transazione da aprire.
@@ -112,6 +115,7 @@ query_templates = {
         "drop_constraint": "ALTER TABLE {table} DROP CONSTRAINT {name};",
         "drop_foreign_key": None,   # usa drop_constraint
         "drop_view": "DROP VIEW {name};",
+        "drop_trigger": "DROP TRIGGER {name};",
         "drop_sequence": "DROP SEQUENCE {name};",
         "drop_synonym": "DROP SYNONYM {name};",
         # SQL Server sa annullare un DDL: lo script sta in una transazione.
@@ -139,6 +143,7 @@ query_templates = {
         "drop_constraint": None,
         "drop_foreign_key": None,
         "drop_view": "DROP VIEW {name};",
+        "drop_trigger": "DROP TRIGGER {name};",
         "drop_sequence": None,
         "drop_synonym": None,
         # SQLite sa annullare un DDL.
