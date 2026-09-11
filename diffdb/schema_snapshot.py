@@ -287,14 +287,18 @@ def connect_args_per(url, secondi: int = SECONDI_CONNESSIONE) -> dict:
 # per non far restare bloccata una pipeline che nessuno sta guardando, non per
 # tagliare corto su uno schema legittimamente grande.
 #
-# Ogni motore lo espone in un modo diverso. pymssql e oracledb hanno un vero
-# timeout per chiamata, passato come argomento di connessione (in unita'
-# diverse: pymssql in secondi, oracledb in millisecondi). PostgreSQL e MySQL
-# non hanno un argomento di connessione per questo: e' una variabile di
-# sessione (SET statement_timeout / SET SESSION max_execution_time), da
-# impostare a ogni nuova connessione *fisica* — non a ogni prestito dal pool,
-# per questo si usa l'evento "connect" di SQLAlchemy e non un'istruzione
-# eseguita a mano dopo la connessione.
+# Ogni motore lo espone in un modo diverso, e non sempre come sembra:
+#
+# - pymssql ha un vero timeout per chiamata come argomento di *connessione*
+#   (in secondi) - verificato dal vivo su SQL Server.
+# - oracledb ha lo stesso concetto, in millisecondi, ma come *proprieta' della
+#   connessione* da impostare dopo essersi connessi, non come argomento di
+#   connect(): passarlo a connect_args solleva TypeError. Sbagliato al primo
+#   tentativo, corretto dopo che la CI l'ha mostrato su Oracle vero.
+# - PostgreSQL e MySQL non hanno ne' l'uno ne' l'altro: e' una variabile di
+#   sessione (SET statement_timeout / SET SESSION max_execution_time), da
+#   impostare a ogni nuova connessione *fisica* - per questo si usa l'evento
+#   "connect" di SQLAlchemy, non un'istruzione a mano dopo la connessione.
 #
 # SQLite resta fuori: non essendo in rete, una query che "si blocca" e' quasi
 # sempre un file bloccato da un altro processo, un concetto diverso (e con un
@@ -302,8 +306,11 @@ def connect_args_per(url, secondi: int = SECONDI_CONNESSIONE) -> dict:
 SECONDI_QUERY = 60
 
 QUERY_TIMEOUT_CONNECT_ARG = {
-    "pymssql": ("timeout", 1),            # secondi
-    "oracledb": ("call_timeout", 1000),   # millisecondi
+    "pymssql": ("timeout", 1),   # secondi, argomento di connect()
+}
+
+QUERY_TIMEOUT_ATTRIBUTO = {
+    "oracledb": ("call_timeout", 1000),   # millisecondi, proprieta' post-connessione
 }
 
 QUERY_TIMEOUT_SESSION_SQL = {
@@ -328,6 +335,17 @@ def crea_engine(conn_str: str, env_name: str | None = None,
     # pool_pre_ping: una connessione chiusa dal server mentre era nel pool
     # verrebbe usata lo stesso, e fallirebbe con un errore incomprensibile.
     engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
+
+    if secondi_query and driver in QUERY_TIMEOUT_ATTRIBUTO:
+        attributo, unita = QUERY_TIMEOUT_ATTRIBUTO[driver]
+        valore = secondi_query * unita
+
+        def _imposta_timeout_attributo(dbapi_connection, connection_record):
+            # Una proprieta' Python sul wrapper del driver, non un comando SQL:
+            # nessun round-trip al server, nessun commit da fare.
+            setattr(dbapi_connection, attributo, valore)
+
+        event.listen(engine, "connect", _imposta_timeout_attributo)
 
     comando_sessione = QUERY_TIMEOUT_SESSION_SQL.get(driver)
     if secondi_query and comando_sessione:

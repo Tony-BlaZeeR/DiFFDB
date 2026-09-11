@@ -320,17 +320,31 @@ def test_annullare_riporta_l_ambiente_com_era(ambienti):
 # questo codice lo perdeva in silenzio dopo il primo uso, perche' la SET non
 # veniva confermata (vedi il commit() in _imposta_timeout_sessione).
 
+# SELECT SLEEP(n) su MySQL non e' un buon modo di verificare max_execution_time:
+# e' un limite documentato di MySQL, non un difetto della correzione. Il
+# timeout li' si controlla mentre si elaborano righe vere, a intervalli, e
+# SLEEP() blocca il thread senza mai passare da quei controlli - quindi non
+# viene interrotta anche con il timeout attivo e impostato correttamente.
+# Verificato dal vivo: la query resta bloccata per i 5 secondi pieni.
 SONNO = {
     "postgresql": "SELECT pg_sleep(5)",
-    "mysql": "SELECT SLEEP(5)",
     "mssql": "WAITFOR DELAY '00:00:05'",
     "oracle": "BEGIN DBMS_SESSION.SLEEP(5); END;",
 }
+
+# Su MySQL si verifica la variabile di sessione stessa, non l'annullamento di
+# una query: e' quello che il fix con il commit() protegge davvero (che la
+# SET venga eseguita ed ecco perche' regga anche al secondo prestito).
+VARIABILE_TIMEOUT_SESSIONE = {"mysql": "SELECT @@max_execution_time"}
 
 
 def test_una_query_bloccata_viene_annullata_dal_timeout(coppia):
     """Con un timeout di 2 secondi, una query che dorme 5 non deve mai
     arrivare in fondo: deve fallire, non completarsi lentamente."""
+    if coppia.dialetto not in SONNO:
+        pytest.skip(f"su {coppia.dialetto} SLEEP non e' interrompibile dal timeout "
+                    f"(vedi test_la_variabile_di_timeout_e_impostata)")
+
     from diffdb.schema_snapshot import crea_engine
 
     engine = crea_engine(coppia.svi.url, secondi_query=2)
@@ -354,6 +368,10 @@ def test_il_timeout_regge_al_secondo_prestito_dalla_stessa_connessione(coppia):
     veniva annullata dal primo ROLLBACK che SQLAlchemy emette sulla stessa
     connessione fisica, e dal secondo prestito in poi il timeout smetteva di
     valere senza che nessuno se ne accorgesse."""
+    if coppia.dialetto not in SONNO:
+        pytest.skip(f"su {coppia.dialetto} SLEEP non e' interrompibile dal timeout "
+                    f"(vedi test_la_variabile_di_timeout_regge_al_secondo_prestito)")
+
     from diffdb.schema_snapshot import crea_engine
 
     engine = crea_engine(coppia.svi.url, secondi_query=2)
@@ -369,6 +387,50 @@ def test_il_timeout_regge_al_secondo_prestito_dalla_stessa_connessione(coppia):
         assert durata < 4.5, (
             f"[{coppia.dialetto}] al secondo prestito il timeout non e' scattato "
             f"({durata:.1f}s)")
+    finally:
+        engine.dispose()
+
+
+def test_la_variabile_di_timeout_e_impostata(coppia):
+    """Per i dialetti dove SLEEP() non basta a dimostrarlo (MySQL): si legge
+    direttamente la variabile di sessione che il fix imposta."""
+    query = VARIABILE_TIMEOUT_SESSIONE.get(coppia.dialetto)
+    if query is None:
+        pytest.skip(f"su {coppia.dialetto} l'annullamento si verifica con SLEEP "
+                    f"(vedi test_una_query_bloccata_viene_annullata_dal_timeout)")
+
+    from diffdb.schema_snapshot import crea_engine
+
+    engine = crea_engine(coppia.svi.url, secondi_query=2)
+    try:
+        with engine.connect() as conn:
+            valore = conn.execute(text(query)).scalar()
+        assert valore == 2000, (   # millisecondi
+            f"[{coppia.dialetto}] max_execution_time e' {valore}, non 2000")
+    finally:
+        engine.dispose()
+
+
+def test_la_variabile_di_timeout_regge_al_secondo_prestito(coppia):
+    """Lo stesso bug di test_il_timeout_regge_al_secondo_prestito_dalla_stessa_connessione,
+    verificato leggendo la variabile invece di affidarsi a SLEEP()."""
+    query = VARIABILE_TIMEOUT_SESSIONE.get(coppia.dialetto)
+    if query is None:
+        pytest.skip(f"su {coppia.dialetto} l'annullamento si verifica con SLEEP "
+                    f"(vedi test_il_timeout_regge_al_secondo_prestito_dalla_stessa_connessione)")
+
+    from diffdb.schema_snapshot import crea_engine
+
+    engine = crea_engine(coppia.svi.url, secondi_query=2)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))   # primo prestito: solo per restituirla al pool
+
+        with engine.connect() as conn:       # secondo prestito: la stessa connessione fisica
+            valore = conn.execute(text(query)).scalar()
+        assert valore == 2000, (
+            f"[{coppia.dialetto}] al secondo prestito max_execution_time e' "
+            f"{valore}, non 2000")
     finally:
         engine.dispose()
 
