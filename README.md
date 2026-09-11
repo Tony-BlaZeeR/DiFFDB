@@ -381,11 +381,15 @@ schemi grandi. Non viene scritto nulla su disco finche' non premi *Esporta*.
 python -m diffdb.cli --list                                  # connessioni configurate
 python -m diffdb.cli SVI COL --out ./report                  # confronta e scrive gli output
 python -m diffdb.cli SVI COL --fail-on-diff                  # esce con 1 se divergono
+python -m diffdb.cli SVI COL --dry-run                       # solo le differenze, niente su disco
 python -m diffdb.cli sqlite:///a.db sqlite:///b.db           # anche due URL al volo
 ```
 
 `--fail-on-diff` e' quello che serve in CI: fa fallire la build se collaudo e
-produzione hanno smesso di somigliarsi.
+produzione hanno smesso di somigliarsi. `--dry-run` mostra le stesse
+differenze ma non tocca il filesystem — niente script, niente Excel, niente
+snapshot, nessuna regola accettata — utile per vedere cosa farebbe un comando
+prima di lasciarglielo fare davvero.
 
 ## Build (eseguibile portable)
 
