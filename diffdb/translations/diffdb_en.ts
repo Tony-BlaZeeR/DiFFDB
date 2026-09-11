@@ -734,42 +734,47 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
         <translation>{0}  →  {1}. Tick the entries to include in the SQL script.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="223"/>
+        <location filename="../results_tab.py" line="227"/>
         <source>Tabelle e colonne</source>
         <translation>Tables and columns</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="224"/>
+        <location filename="../results_tab.py" line="228"/>
         <source>Indici, chiavi e vincoli</source>
         <translation>Indexes, keys and constraints</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="225"/>
+        <location filename="../results_tab.py" line="229"/>
         <source>Viste</source>
         <translation>Views</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="226"/>
+        <location filename="../results_tab.py" line="230"/>
         <source>Sequenze</source>
         <translation>Sequences</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="227"/>
+        <location filename="../results_tab.py" line="231"/>
         <source>Sinonimi</source>
         <translation>Synonyms</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="313"/>
+        <location filename="../results_tab.py" line="232"/>
+        <source>Trigger</source>
+        <translation>Trigger</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="324"/>
         <source>Niente da esportare</source>
         <translation>Nothing to export</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="314"/>
+        <location filename="../results_tab.py" line="325"/>
         <source>Spunta almeno una differenza.</source>
         <translation>Tick at least one difference.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="331"/>
+        <location filename="../results_tab.py" line="342"/>
         <source>Esporta SQL ({0} selezionati)</source>
         <translation>Export SQL ({0} selected)</translation>
     </message>
