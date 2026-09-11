@@ -1,0 +1,15 @@
+# Chi rivede cosa. Ogni pull request chiede automaticamente la revisione a
+# queste persone.
+
+*                       @antoniobis98
+
+# Il generatore SQL e la lettura dello schema vanno guardati con piu'
+# attenzione: un errore qui finisce in produzione dentro uno script.
+/diffdb/diff_DB.py           @antoniobis98
+/diffdb/schema_snapshot.py   @antoniobis98
+/diffdb/config/              @antoniobis98
+
+# Tutto quello che tocca i segreti.
+/diffdb/keystore.py     @antoniobis98
+/diffdb/urls.py         @antoniobis98
+/SECURITY.md            @antoniobis98
