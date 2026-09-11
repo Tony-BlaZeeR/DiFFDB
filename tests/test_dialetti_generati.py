@@ -281,3 +281,67 @@ def test_senza_forma_nativa_il_tipo_resta_quello_di_prima():
 
     tipo = type_from_text("VARCHAR2(50)")
     assert str(tipo) == tipo.get_col_spec() == "VARCHAR2(50)"
+
+
+# --- annullamento -----------------------------------------------------------
+
+
+def _annulla(dialetto, schema=None):
+    from diffdb.diff_DB import generate_rollback_scripts
+
+    riferimento = _snapshot("SVI", dialetto, completo=True, schema=schema)
+    da_allineare = _snapshot("COL", dialetto, completo=False, schema=schema)
+    return generate_rollback_scripts(compare_snapshots(riferimento, da_allineare), "COL")
+
+
+@pytest.mark.parametrize("dialetto", DIALETTI)
+def test_l_annullamento_non_lascia_segnaposto(dialetto):
+    for istruzione in _istruzioni(_annulla(dialetto)):
+        residui = re.findall(r"\{[a-z_]+\}", istruzione)
+        assert not residui, f"{dialetto}: {residui} in {istruzione!r}"
+
+
+@pytest.mark.parametrize("dialetto", DIALETTI)
+def test_l_annullamento_finisce_le_istruzioni(dialetto):
+    for istruzione in _istruzioni(_annulla(dialetto)):
+        assert istruzione.rstrip().endswith(";"), f"{dialetto}: {istruzione!r}"
+
+
+@pytest.mark.parametrize("dialetto", DIALETTI)
+def test_l_annullamento_toglie_la_tabella_creata(dialetto):
+    istruzioni = _istruzioni(_annulla(dialetto))
+    assert any(i.startswith("DROP TABLE") and "ordini" in i for i in istruzioni)
+
+
+@pytest.mark.parametrize("dialetto", DIALETTI)
+def test_l_annullamento_non_tocca_cio_che_esisteva_gia(dialetto):
+    """Disfare l'allineamento non vuol dire svuotare l'ambiente: 'clienti'
+    c'era prima e deve restare."""
+    for istruzione in _istruzioni(_annulla(dialetto)):
+        assert not (istruzione.startswith("DROP TABLE") and "clienti" in istruzione)
+
+
+@pytest.mark.parametrize("dialetto, con_tabella", [
+    ("postgresql", False),
+    ("oracle", False),
+    ("sqlite", False),
+    ("mysql", True),      # l'indice appartiene alla tabella e va nominata
+    ("mssql", True),
+])
+def test_il_drop_dell_indice_segue_il_dialetto(dialetto, con_tabella):
+    drop = [i for i in _istruzioni(_annulla(dialetto)) if i.startswith("DROP INDEX")]
+    assert drop, f"{dialetto}: nessun DROP INDEX"
+    assert all((" ON " in i) is con_tabella for i in drop), drop
+
+
+def test_l_annullamento_avvisa_prima_di_perdere_dati():
+    """Togliere una colonna aggiunta cancella quello che ci e' stato scritto."""
+    avvisi = [i for blocco in _annulla("postgresql").values() for i in blocco
+              if i.startswith("--")]
+    assert any("cancella i dati" in i for i in avvisi)
+
+
+def test_l_annullamento_rimette_il_tipo_precedente():
+    """Il tipo di prima lo sappiamo: e' quello letto dall'ambiente allineato."""
+    modifiche = [i for i in _istruzioni(_annulla("postgresql")) if "nome" in i]
+    assert modifiche and all("VARCHAR(30)" in i for i in modifiche), modifiche

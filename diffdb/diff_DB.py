@@ -476,6 +476,147 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
     return scripts
 
 
+def generate_rollback_scripts(diff: DiffResult, target_env: str) -> dict[str, list[str]]:
+    """Come disfare quello che `generate_sql_scripts` ha appena fatto.
+
+    Serve dove il database non sa annullare un DDL — Oracle e MySQL fanno commit
+    a ogni istruzione — cioe' proprio dove una transazione non c'e'. Ma serve
+    anche altrove: una transazione protegge dentro l'esecuzione, non dal
+    pentimento del giorno dopo.
+
+    Si ricava dalle stesse Difference dello script di andata, non invertendo il
+    testo SQL: leggere all'indietro delle stringhe sarebbe fragile, e qui gli
+    errori sono distruttivi.
+
+    Non annulla tutto: quello che l'allineamento ha lasciato come commento resta
+    un commento anche qui, e cio' che non e' reversibile in modo univoco viene
+    detto invece che indovinato.
+    """
+    target = diff.snapshot_of(target_env)
+    source = diff.other_than(target_env)
+    templates = templates_for(target.dialect)
+    quote = target.dialect_impl.identifier_preparer.quote
+    portable = _portable_metadata(source, target)
+
+    def qualify(name: str) -> str:
+        return f"{quote(target.schema)}.{quote(name)}" if target.schema else quote(name)
+
+    scripts = {"tables": [], "constraints": [], "views": [], "sequences": [], "synonyms": []}
+
+    # Prima i vincoli e gli indici, poi le tabelle: l'ordine inverso
+    # dell'andata, o si prova a togliere una tabella che qualcuno referenzia.
+    for d in diff.constraints:
+        if d.missing_in != target_env:
+            continue
+        scripts["constraints"].append(
+            _annulla_vincolo(d, portable, target, templates, qualify, quote))
+
+    da_eliminare = [d.name for d in diff.tables
+                    if d.kind == "table" and d.missing_in == target_env]
+    for table in reversed(_in_ordine_di_dipendenza(da_eliminare, portable, target, scripts)):
+        scripts["tables"].append(templates["drop_table"].format(table=qualify(table.name)))
+
+    for d in diff.tables:
+        if d.kind != "column":
+            continue
+        if d.change == MISSING and d.missing_in == target_env:
+            # La colonna non c'era: toglierla riporta indietro, ma i dati messi
+            # nel frattempo se ne vanno. Va detto, non nascosto.
+            scripts["tables"].append(
+                f"-- Attenzione: {d.name}.{d.column} e' stata aggiunta dall'allineamento. "
+                f"Toglierla cancella i dati scritti da allora.")
+            scripts["tables"].append(templates["drop"].format(
+                table=qualify(d.name), column=quote(d.column)))
+        elif d.change == TYPE_MISMATCH:
+            scripts["tables"].append(_ripristina_tipo(d, target, templates, qualify, quote))
+        elif d.change == DEFAULT_MISMATCH:
+            scripts["tables"].append(_ripristina_default(d, target, templates, qualify, quote))
+
+    for d in diff.views:
+        if d.missing_in == target_env and templates["drop_view"]:
+            scripts["views"].append(templates["drop_view"].format(name=qualify(d.name)))
+        elif d.change == DEFINITION_MISMATCH:
+            definizione = target.views.get(d.name) or ""
+            scripts["views"].append(
+                _replace_view_ddl(d.name, definizione, templates, qualify) if definizione.strip()
+                else f"-- La vista {d.name} e' stata riscritta: il corpo precedente non "
+                     f"e' leggibile da qui, va ripreso a mano.")
+
+    for d in diff.sequences:
+        if d.missing_in == target_env and templates["sequences"] and templates["drop_sequence"]:
+            scripts["sequences"].append(templates["drop_sequence"].format(name=qualify(d.name)))
+
+    for d in diff.synonyms:
+        if d.missing_in == target_env and templates["drop_synonym"]:
+            scripts["synonyms"].append(templates["drop_synonym"].format(name=qualify(d.name)))
+
+    return {sezione: [i for i in istruzioni if i] for sezione, istruzioni in scripts.items()}
+
+
+def _annulla_vincolo(d: Difference, portable: MetaData, target: Snapshot, templates: dict,
+                     qualify, quote) -> str | None:
+    """DROP dell'indice o del vincolo che l'allineamento ha aggiunto."""
+    if d.kind == "index":
+        table = _portable_table(portable, d.name, target.schema)
+        nome = next((i.name for i in (table.indexes if table is not None else [])
+                     if index_signature(i) == d.detail), None)
+        if not nome:
+            return f"-- Indice {d.detail} su {d.name}: non se ne ricava il nome, va tolto a mano."
+        return templates["drop_index"].format(index=quote(nome), table=qualify(d.name))
+
+    if d.kind in ("foreign_key", "unique"):
+        if not templates["alter_add_constraint"]:
+            return None          # non era stato aggiunto: niente da togliere
+        nome = _nome_vincolo(d, portable, target)
+        if not nome:
+            return (f"-- Vincolo {d.kind} {d.detail} su {d.name}: non se ne ricava il nome, "
+                    f"va tolto a mano.")
+        modello = (templates["drop_foreign_key"] if d.kind == "foreign_key"
+                   and templates["drop_foreign_key"] else templates["drop_constraint"])
+        if not modello:
+            return f"-- {target.dialect} non sa togliere un {d.kind} da una tabella esistente."
+        return modello.format(table=qualify(d.name), name=quote(nome))
+
+    return None
+
+
+def _nome_vincolo(d: Difference, portable: MetaData, target: Snapshot) -> str | None:
+    table = _portable_table(portable, d.name, target.schema)
+    if table is None:
+        return None
+    if d.kind == "foreign_key":
+        return next((fk.name for fk in table.foreign_key_constraints
+                     if fk_signature(fk) == d.detail), None)
+    return next((c.name for c in table.constraints
+                 if isinstance(c, UniqueConstraint) and unique_signature(c) == d.detail), None)
+
+
+def _ripristina_tipo(d: Difference, target: Snapshot, templates: dict, qualify, quote) -> str:
+    """Rimette il tipo che la colonna aveva prima dell'allineamento.
+
+    Lo sappiamo con certezza: e' quello letto dall'ambiente da allineare.
+    """
+    colonna = target.columns(d.name).get(d.column)
+    if colonna is None:
+        return f"-- {d.name}.{d.column}: tipo precedente non ricavabile, va rimesso a mano."
+    return templates["modify"].format(
+        table=qualify(d.name), column=quote(d.column),
+        type=_column_type(colonna, target,
+                          _nullability_suffix(colonna, colonna, templates["modify_nullability"])))
+
+
+def _ripristina_default(d: Difference, target: Snapshot, templates: dict, qualify, quote) -> str:
+    colonna = target.columns(d.name).get(d.column)
+    precedente = default_signature(colonna) if colonna is not None else ""
+    modello = templates["set_default"] if precedente else templates["drop_default"]
+    if modello is None:
+        return (f"-- {target.dialect}: il default di {d.name}.{d.column} va rimesso a mano "
+                f"({precedente or 'nessuno'}).")
+    if precedente:
+        return modello.format(table=qualify(d.name), column=quote(d.column), default=precedente)
+    return modello.format(table=qualify(d.name), column=quote(d.column))
+
+
 def _in_ordine_di_dipendenza(nomi, portable: MetaData, target: Snapshot,
                              scripts: dict[str, list[str]]) -> list:
     """Le tabelle da creare, ordinate perche' ogni foreign key trovi il suo bersaglio.
