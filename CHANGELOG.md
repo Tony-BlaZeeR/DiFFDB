@@ -38,6 +38,10 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 - Lettura dei due ambienti **in parallelo**, timeout di connessione e pulsante
   **Annulla**.
 - File di log con rotazione, con le connection string mascherate.
+- **Script di annullamento** (`annulla_<ambiente>.sql`) accanto a ogni script di
+  allineamento: disfa quello che il primo ha fatto. Verificato sui quattro
+  motori veri — si allinea, si disfa, e l'impronta dell'ambiente torna
+  identica.
 
 ### Modificato
 

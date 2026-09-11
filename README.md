@@ -19,6 +19,7 @@ allinearli. Con interfaccia grafica e con una CLI da mettere in pipeline.
 - `allinea_<ambiente>.sql` — uno script **per ogni direzione**, con SQL eseguibile
   (CREATE TABLE con colonne, tipi e FK; ALTER TABLE; CREATE INDEX; ADD CONSTRAINT;
   CREATE VIEW; CREATE SEQUENCE), compilato sul dialetto dell'ambiente da allineare.
+- `annulla_<ambiente>.sql` — come disfare quell'allineamento (vedi sotto).
 - `snapshot.json` — la struttura di un ambiente congelata su file (vedi sotto).
 
 DiFFDB propone, non applica: non esegue mai niente sui database confrontati. Le
@@ -44,6 +45,25 @@ dall'inizio alla fine**:
 
   Avvolgere Oracle e MySQL in un `BEGIN/COMMIT` darebbe l'illusione di poter
   annullare, che e' peggio che non averla.
+
+### Tornare indietro
+
+Accanto a ogni script di allineamento ne viene scritto uno di **annullamento**,
+che disfa quello che il primo ha fatto. Serve soprattutto su Oracle e MySQL,
+dove la transazione non c'e' — ma anche altrove: una transazione protegge
+dentro l'esecuzione, non dal pentimento del giorno dopo.
+
+Si ricava dalle stesse differenze dell'andata, non invertendo il testo SQL:
+leggere all'indietro delle stringhe sarebbe fragile, e qui gli errori
+cancellano. Le sezioni vanno al contrario — viste e vincoli prima delle
+tabelle — e il tipo di una colonna torna quello che l'ambiente aveva davvero.
+
+Non annulla tutto, e non finge di farlo: quello che l'allineamento ha lasciato
+come commento resta un commento. Dove una colonna nuova poteva contenere dati,
+lo script avvisa prima di toglierla.
+
+Il contratto e' verificato sui quattro motori veri: si allinea, si disfa, e
+l'impronta dell'ambiente torna identica a prima.
 
 ## Database supportati
 
