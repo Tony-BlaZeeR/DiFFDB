@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Le versioni sono fissate: senza qualcuno che le alzi, restano ferme finche'
+  # non diventano un problema di sicurezza.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Un aggiornamento per volta e' rumore: si raggruppano quelli minori.
+      minori:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
