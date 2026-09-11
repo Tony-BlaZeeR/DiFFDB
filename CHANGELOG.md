@@ -9,6 +9,16 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- **Vincoli CHECK** nel confronto: quarto tipo di vincolo dopo indici, foreign
+  key e unique. Si confrontano per condizione normalizzata, non per nome — i
+  nomi sono spesso autogenerati dal motore e cambiano da un ambiente
+  all'altro. Generazione e annullamento seguono lo stesso schema degli altri
+  vincoli (MySQL ha una sintassi propria per toglierli, `DROP CHECK`, diversa
+  da `DROP CONSTRAINT`). Su SQLite la lettura resta disattivata: la
+  riflessione e' inaffidabile anche con un solo vincolo.
+
 ## [1.2.0]
 
 ### Aggiunto

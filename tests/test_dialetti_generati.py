@@ -220,7 +220,9 @@ def test_ogni_dialetto_dichiara_tutte_le_capacita(dialetto):
     si genera lo script per un ambiente di produzione."""
     attese = {"add", "modify", "drop", "set_default", "drop_default", "modify_nullability",
               "alter_add_constraint", "view_or_replace", "sequences", "alter_sequence",
-              "create_synonym", "begin", "commit"}
+              "create_synonym", "begin", "commit",
+              "drop_table", "drop_index", "drop_constraint", "drop_foreign_key",
+              "drop_check", "drop_view", "drop_sequence", "drop_synonym"}
     assert attese <= set(templates_for(dialetto))
 
 
@@ -345,3 +347,86 @@ def test_l_annullamento_rimette_il_tipo_precedente():
     """Il tipo di prima lo sappiamo: e' quello letto dall'ambiente allineato."""
     modifiche = [i for i in _istruzioni(_annulla("postgresql")) if "nome" in i]
     assert modifiche and all("VARCHAR(30)" in i for i in modifiche), modifiche
+
+
+# --- vincoli CHECK -----------------------------------------------------------
+#
+# Scenario a parte (non nel _snapshot() condiviso sopra): un solo vincolo su
+# una tabella condivisa da entrambi gli ambienti, cosi' il confronto lo vede
+# come "check mancante" e non come parte di una tabella intera mancante.
+
+
+def _snapshot_check(dialetto, *, con_vincolo, schema=None):
+    t = TIPI[dialetto]
+    clienti = {
+        "columns": [_colonna("id", t["intero"], nullable=False),
+                    _colonna("saldo", t["decimale"])],
+        "primary_key": ["id"],
+        "indexes": [], "unique_constraints": [], "foreign_keys": [],
+        "check_constraints": [{"name": "ck_saldo", "sqltext": "saldo >= 0"}]
+        if con_vincolo else [],
+    }
+    return from_dict({
+        "format": FORMAT_VERSION, "env_name": "SVI" if con_vincolo else "COL",
+        "dialect": dialetto, "schema": schema,
+        "tables": {"clienti": clienti}, "views": {}, "sequences": {}, "synonyms": {},
+    })
+
+
+def _script_check(dialetto, schema=None):
+    riferimento = _snapshot_check(dialetto, con_vincolo=True, schema=schema)
+    da_allineare = _snapshot_check(dialetto, con_vincolo=False, schema=schema)
+    return generate_sql_scripts(compare_snapshots(riferimento, da_allineare), "COL")
+
+
+def _annulla_check(dialetto, schema=None):
+    from diffdb.diff_DB import generate_rollback_scripts
+
+    riferimento = _snapshot_check(dialetto, con_vincolo=True, schema=schema)
+    da_allineare = _snapshot_check(dialetto, con_vincolo=False, schema=schema)
+    return generate_rollback_scripts(compare_snapshots(riferimento, da_allineare), "COL")
+
+
+@pytest.mark.parametrize("dialetto", [d for d in DIALETTI if d != "sqlite"])
+def test_il_check_mancante_genera_add_constraint(dialetto):
+    """Sui dialetti che sanno aggiungere vincoli, l'ALTER e' quello standard:
+    SQLAlchemy lo compila uguale per tutti e quattro."""
+    istruzioni = _istruzioni(_script_check(dialetto))
+    assert any(i.startswith("ALTER TABLE") and "ck_saldo" in i and "CHECK" in i
+               for i in istruzioni), istruzioni
+
+
+def test_sqlite_non_confronta_i_check_quindi_non_genera_niente():
+    """Su SQLite Snapshot.check_constraints() torna sempre vuoto (la
+    riflessione e' inaffidabile): il confronto non vede nemmeno la differenza,
+    quindi non c'e' un ALTER da generare ne' un avviso da scrivere — a
+    differenza di unique e FK, dove il vincolo si vede ma non si puo' aggiungere."""
+    assert _script_check("sqlite")["constraints"] == []
+
+
+@pytest.mark.parametrize("dialetto", [d for d in DIALETTI if d != "sqlite"])
+def test_l_annullamento_toglie_il_check_aggiunto(dialetto):
+    istruzioni = _istruzioni(_annulla_check(dialetto))
+    assert any("ck_saldo" in i for i in istruzioni), istruzioni
+
+
+def test_mysql_toglie_il_check_con_drop_check_non_drop_constraint():
+    """Su MySQL DROP CONSTRAINT e' riservato all'unicita' (via DROP INDEX): i
+    CHECK si tolgono con la sintassi propria, DROP CHECK."""
+    istruzioni = _istruzioni(_annulla_check("mysql"))
+    drop = next(i for i in istruzioni if "ck_saldo" in i)
+    assert drop.startswith("ALTER TABLE clienti DROP CHECK"), drop
+
+
+@pytest.mark.parametrize("dialetto", ["postgresql", "oracle", "mssql"])
+def test_gli_altri_dialetti_usano_drop_constraint_per_il_check(dialetto):
+    istruzioni = _istruzioni(_annulla_check(dialetto))
+    drop = next(i for i in istruzioni if "ck_saldo" in i)
+    assert drop.startswith("ALTER TABLE clienti DROP CONSTRAINT"), drop
+
+
+def test_con_uno_schema_il_drop_del_check_e_qualificato():
+    istruzioni = _istruzioni(_annulla_check("postgresql", schema="APP"))
+    drop = next(i for i in istruzioni if "ck_saldo" in i)
+    assert "APP" in drop.split()[2], drop
+

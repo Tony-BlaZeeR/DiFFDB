@@ -1,7 +1,7 @@
 """Confronto strutturale fra due ambienti e generazione degli script di allineamento.
 
 Il confronto guarda colonne (nome, tipo, nullability), indici, foreign key,
-constraint di unicita', chiavi primarie, viste, sequenze e sinonimi.
+constraint di unicita' e CHECK, chiavi primarie, viste, sequenze e sinonimi.
 Gli script prodotti sono SQL eseguibile, compilato sul dialetto dell'ambiente
 da allineare.
 """
@@ -11,7 +11,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from sqlalchemy import MetaData, UniqueConstraint
+from sqlalchemy import CheckConstraint, MetaData, UniqueConstraint
 from sqlalchemy.exc import NoReferencedTableError
 from sqlalchemy.schema import AddConstraint, CreateIndex, CreateTable
 
@@ -19,9 +19,11 @@ from diffdb.config.dialectConfig import templates_for
 from diffdb.rules import NESSUNA, Regole
 from diffdb.schema_snapshot import (
     Snapshot,
+    check_signature,
     expand,  # noqa: F401  (ri-esportata: era definita qui)
     fk_signature,
     index_signature,
+    normalize_sql,
     snapshot_connection,
     take_snapshot,  # noqa: F401
     type_signature,
@@ -216,7 +218,7 @@ def _compare_columns(table: str, snap1: Snapshot, snap2: Snapshot) -> list[Diffe
                 detail=f"{e1}: {_null(cols1[col])} | {e2}: {_null(cols2[col])}",
             ))
         def1, def2 = default_signature(cols1[col]), default_signature(cols2[col])
-        if _normalize_sql(def1) != _normalize_sql(def2):
+        if normalize_sql(def1) != normalize_sql(def2):
             diffs.append(Difference(
                 "column", table, DEFAULT_MISMATCH, column=col,
                 detail=f"{e1}: {def1 or '(nessuno)'} | {e2}: {def2 or '(nessuno)'}",
@@ -226,7 +228,7 @@ def _compare_columns(table: str, snap1: Snapshot, snap2: Snapshot) -> list[Diffe
 
 
 def _compare_constraints(table: str, snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
-    """Indici, foreign key, unique e chiave primaria."""
+    """Indici, foreign key, unique, check e chiave primaria."""
     diffs = []
     e1, e2 = snap1.env_name, snap2.env_name
 
@@ -234,6 +236,7 @@ def _compare_constraints(table: str, snap1: Snapshot, snap2: Snapshot) -> list[D
         ("index", Snapshot.indexes),
         ("foreign_key", Snapshot.foreign_keys),
         ("unique", Snapshot.unique_constraints),
+        ("check", Snapshot.check_constraints),
     ):
         items1, items2 = getter(snap1, table), getter(snap2, table)
         for signature in sorted(set(items2) - set(items1)):
@@ -275,7 +278,7 @@ def _compare_views(snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
     # SVI vs PRE), dove il database normalizza il testo allo stesso modo.
     for name in sorted(set(snap1.views) & set(snap2.views)):
         body1, body2 = snap1.views[name], snap2.views[name]
-        if _normalize_sql(body1) != _normalize_sql(body2):
+        if normalize_sql(body1) != normalize_sql(body2):
             diffs.append(Difference("view", name, DEFINITION_MISMATCH,
                                     detail="il corpo della vista e' diverso nei due ambienti"))
     return diffs
@@ -317,25 +320,6 @@ def default_signature(column) -> str:
         return ""
     text = getattr(arg, "text", arg)  # DefaultClause.arg puo' essere un TextClause
     return str(text).strip()
-
-
-_WS = re.compile(r"\s+")
-
-
-def _normalize_sql(sql: str) -> str:
-    """Normalizza per il confronto: spazi collassati, minuscolo, parentesi e
-    apici esterni rimossi. I database riformattano viste e default (SQL Server
-    incapsula i default in doppie parentesi), quindi il confronto testuale grezzo
-    darebbe falsi positivi."""
-    if not sql:
-        return ""
-    normalized = _WS.sub(" ", sql).strip().lower().rstrip(";").strip()
-    while len(normalized) >= 2 and normalized[0] in "('" and normalized[-1] in ")'":
-        inner = normalized[1:-1].strip()
-        if not inner:
-            break
-        normalized = inner
-    return normalized
 
 
 # --- generazione SQL ------------------------------------------------------
@@ -422,7 +406,7 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
                 )
             continue
 
-        if d.kind in ("foreign_key", "unique") and not templates["alter_add_constraint"]:
+        if d.kind in ("foreign_key", "unique", "check") and not templates["alter_add_constraint"]:
             scripts["constraints"].append(
                 f"-- {target.dialect} non sa aggiungere vincoli a una tabella esistente: "
                 f"il vincolo {d.kind} {d.detail} su {d.name} va creato ricreando la tabella"
@@ -564,15 +548,19 @@ def _annulla_vincolo(d: Difference, portable: MetaData, target: Snapshot, templa
             return f"-- Indice {d.detail} su {d.name}: non se ne ricava il nome, va tolto a mano."
         return templates["drop_index"].format(index=quote(nome), table=qualify(d.name))
 
-    if d.kind in ("foreign_key", "unique"):
+    if d.kind in ("foreign_key", "unique", "check"):
         if not templates["alter_add_constraint"]:
             return None          # non era stato aggiunto: niente da togliere
         nome = _nome_vincolo(d, portable, target)
         if not nome:
             return (f"-- Vincolo {d.kind} {d.detail} su {d.name}: non se ne ricava il nome, "
                     f"va tolto a mano.")
-        modello = (templates["drop_foreign_key"] if d.kind == "foreign_key"
-                   and templates["drop_foreign_key"] else templates["drop_constraint"])
+        # Ogni categoria puo' avere il suo modo di togliersi (MySQL usa DROP
+        # CHECK per i check e DROP FOREIGN KEY per le foreign key, non il
+        # generico DROP CONSTRAINT): si prova la voce specifica, poi quella
+        # generale.
+        specifico = templates.get(f"drop_{d.kind}")
+        modello = specifico if specifico else templates["drop_constraint"]
         if not modello:
             return f"-- {target.dialect} non sa togliere un {d.kind} da una tabella esistente."
         return modello.format(table=qualify(d.name), name=quote(nome))
@@ -587,6 +575,9 @@ def _nome_vincolo(d: Difference, portable: MetaData, target: Snapshot) -> str | 
     if d.kind == "foreign_key":
         return next((fk.name for fk in table.foreign_key_constraints
                      if fk_signature(fk) == d.detail), None)
+    if d.kind == "check":
+        return next((c.name for c in table.constraints
+                     if isinstance(c, CheckConstraint) and check_signature(c) == d.detail), None)
     return next((c.name for c in table.constraints
                  if isinstance(c, UniqueConstraint) and unique_signature(c) == d.detail), None)
 
@@ -703,6 +694,12 @@ def _constraint_ddl(d: Difference, portable: MetaData, target: Snapshot) -> str 
         for constraint in table.constraints:
             if (isinstance(constraint, UniqueConstraint)
                     and unique_signature(constraint) == d.detail):
+                return _compile(AddConstraint(constraint), target)
+
+    elif d.kind == "check":
+        for constraint in table.constraints:
+            if (isinstance(constraint, CheckConstraint)
+                    and check_signature(constraint) == d.detail):
                 return _compile(AddConstraint(constraint), target)
 
     return None

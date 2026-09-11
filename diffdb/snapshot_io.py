@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     ForeignKeyConstraint,
     Index,
@@ -311,6 +312,17 @@ def _table_to_dict(table: Table, dialect_impl=None) -> dict:
             ),
             key=lambda f: (f["columns"], f["refers_to"]),
         ),
+        # Vuoto e non assente sulle tabelle SQLite: la riflessione dei CHECK
+        # e' inaffidabile su quel dialetto (vedi Snapshot.check_constraints),
+        # quindi table.constraints non ne contiene mai di corretti da salvare.
+        "check_constraints": sorted(
+            (
+                {"name": c.name, "sqltext": str(c.sqltext)}
+                for c in table.constraints
+                if isinstance(c, CheckConstraint)
+            ),
+            key=lambda c: (c["sqltext"], c["name"] or ""),
+        ),
     }
 
 
@@ -431,6 +443,8 @@ def _table_from_dict(metadata: MetaData, name: str, payload: dict, schema) -> Ta
         args.append(UniqueConstraint(*unique["columns"], name=unique.get("name")))
     for fk in payload.get("foreign_keys") or []:
         args.append(ForeignKeyConstraint(fk["columns"], fk["refers_to"], name=fk.get("name")))
+    for check in payload.get("check_constraints") or []:
+        args.append(CheckConstraint(check["sqltext"], name=check.get("name")))
 
     table = Table(name, metadata, *args, schema=schema)
 
