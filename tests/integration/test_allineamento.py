@@ -10,8 +10,11 @@ Ogni dialetto viene saltato se la sua variabile d'ambiente non e' impostata
 (vedi conftest.py), quindi la suite si puo' lanciare anche su un dialetto solo.
 """
 
+import time
+
 import pytest
 from sqlalchemy import MetaData, create_engine, inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from diffdb import snapshot_io
 from diffdb.diff_DB import MISSING, TYPE_MISMATCH, compare_environments, generate_sql_scripts
@@ -305,3 +308,67 @@ def test_annullare_riporta_l_ambiente_com_era(ambienti):
     assert dopo == prima, (
         f"[{ambienti.dialetto}] dopo l'annullamento l'ambiente non e' tornato "
         f"com'era.\n\nannullamento eseguito:\n" + "\n".join(eseguiti))
+
+
+# --- timeout di interrogazione ----------------------------------------------
+#
+# Il timeout di connessione (verificato altrove) non protegge una query che
+# si blocca *dopo* essersi connessa. Qui si verifica che il secondo timeout -
+# quello di interrogazione, in crea_engine() - scatti davvero sui quattro
+# motori, ognuno con la sua sintassi per "dormi N secondi", e che regga anche
+# al secondo prestito della stessa connessione dal pool: la prima versione di
+# questo codice lo perdeva in silenzio dopo il primo uso, perche' la SET non
+# veniva confermata (vedi il commit() in _imposta_timeout_sessione).
+
+SONNO = {
+    "postgresql": "SELECT pg_sleep(5)",
+    "mysql": "SELECT SLEEP(5)",
+    "mssql": "WAITFOR DELAY '00:00:05'",
+    "oracle": "BEGIN DBMS_SESSION.SLEEP(5); END;",
+}
+
+
+def test_una_query_bloccata_viene_annullata_dal_timeout(coppia):
+    """Con un timeout di 2 secondi, una query che dorme 5 non deve mai
+    arrivare in fondo: deve fallire, non completarsi lentamente."""
+    from diffdb.schema_snapshot import crea_engine
+
+    engine = crea_engine(coppia.svi.url, secondi_query=2)
+    try:
+        t0 = time.perf_counter()
+        with pytest.raises(SQLAlchemyError):
+            with engine.connect() as conn:
+                conn.execute(text(SONNO[coppia.dialetto]))
+        durata = time.perf_counter() - t0
+        # Margine largo (il timeout e' 2s): qui si vuole solo essere certi
+        # che non abbia aspettato i 5 secondi pieni della query.
+        assert durata < 4.5, (
+            f"[{coppia.dialetto}] la query ha impiegato {durata:.1f}s: "
+            f"il timeout di interrogazione non e' scattato")
+    finally:
+        engine.dispose()
+
+
+def test_il_timeout_regge_al_secondo_prestito_dalla_stessa_connessione(coppia):
+    """Il bug che questo test blocca: la SET di sessione non confermata
+    veniva annullata dal primo ROLLBACK che SQLAlchemy emette sulla stessa
+    connessione fisica, e dal secondo prestito in poi il timeout smetteva di
+    valere senza che nessuno se ne accorgesse."""
+    from diffdb.schema_snapshot import crea_engine
+
+    engine = crea_engine(coppia.svi.url, secondi_query=2)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))   # primo prestito: solo per restituirla al pool
+
+        t0 = time.perf_counter()
+        with pytest.raises(SQLAlchemyError):
+            with engine.connect() as conn:   # secondo prestito: la stessa connessione fisica
+                conn.execute(text(SONNO[coppia.dialetto]))
+        durata = time.perf_counter() - t0
+        assert durata < 4.5, (
+            f"[{coppia.dialetto}] al secondo prestito il timeout non e' scattato "
+            f"({durata:.1f}s)")
+    finally:
+        engine.dispose()
+

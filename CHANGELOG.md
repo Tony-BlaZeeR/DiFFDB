@@ -21,6 +21,22 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
   `pymssql` non implementa affatto la riflessione dei CHECK in SQLAlchemy. Su
   SQLite la lettura resta disattivata: la riflessione e' inaffidabile anche
   con un solo vincolo.
+- **Timeout di interrogazione** (60 secondi, oltre a quello di connessione
+  gia' esistente): protegge da una query che si blocca *dopo* essersi
+  connessa, non solo durante la connessione. Un secondo per driver: pymssql e
+  oracledb hanno un vero timeout per chiamata, PostgreSQL e MySQL usano una
+  variabile di sessione impostata a ogni nuova connessione fisica.
+  Verificato sui quattro motori, incluso il caso che una prima versione
+  perdeva in silenzio: il timeout doveva reggere anche al secondo prestito
+  della stessa connessione dal pool, non solo al primo.
+
+### Corretto
+
+- L'albero dei risultati non e' piu' quadratico nel numero di differenze:
+  passare il genitore al costruttore di ogni riga, una alla volta, e'
+  quadratico in Qt. Su 100.000 differenze si passa da 7-8 secondi di
+  interfaccia bloccata a poco piu' di uno, costruendo le righe senza genitore
+  e attaccandole tutte insieme.
 
 ## [1.2.0]
 

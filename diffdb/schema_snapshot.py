@@ -10,7 +10,15 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from sqlalchemy import CheckConstraint, MetaData, UniqueConstraint, create_engine, inspect, text
+from sqlalchemy import (
+    CheckConstraint,
+    MetaData,
+    UniqueConstraint,
+    create_engine,
+    event,
+    inspect,
+    text,
+)
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -273,15 +281,76 @@ def connect_args_per(url, secondi: int = SECONDI_CONNESSIONE) -> dict:
     return {parametro: secondi} if parametro and secondi else {}
 
 
+# Il timeout di connessione non protegge da una query che si blocca *dopo*
+# essersi connessa: uno schema enorme, un lock su una tabella di sistema, una
+# scansione lenta. Serve un secondo timeout, per l'interrogazione — pensato
+# per non far restare bloccata una pipeline che nessuno sta guardando, non per
+# tagliare corto su uno schema legittimamente grande.
+#
+# Ogni motore lo espone in un modo diverso. pymssql e oracledb hanno un vero
+# timeout per chiamata, passato come argomento di connessione (in unita'
+# diverse: pymssql in secondi, oracledb in millisecondi). PostgreSQL e MySQL
+# non hanno un argomento di connessione per questo: e' una variabile di
+# sessione (SET statement_timeout / SET SESSION max_execution_time), da
+# impostare a ogni nuova connessione *fisica* — non a ogni prestito dal pool,
+# per questo si usa l'evento "connect" di SQLAlchemy e non un'istruzione
+# eseguita a mano dopo la connessione.
+#
+# SQLite resta fuori: non essendo in rete, una query che "si blocca" e' quasi
+# sempre un file bloccato da un altro processo, un concetto diverso (e con un
+# timeout diverso, sqlite3.connect(timeout=...)) da quello che si vuole qui.
+SECONDI_QUERY = 60
+
+QUERY_TIMEOUT_CONNECT_ARG = {
+    "pymssql": ("timeout", 1),            # secondi
+    "oracledb": ("call_timeout", 1000),   # millisecondi
+}
+
+QUERY_TIMEOUT_SESSION_SQL = {
+    "psycopg2": "SET statement_timeout = {ms}",
+    "pymysql": "SET SESSION max_execution_time = {ms}",
+}
+
+
 def crea_engine(conn_str: str, env_name: str | None = None,
-                secondi: int = SECONDI_CONNESSIONE):
-    """Engine con timeout di connessione e controllo della connessione morta."""
+                secondi: int = SECONDI_CONNESSIONE,
+                secondi_query: int = SECONDI_QUERY):
+    """Engine con timeout di connessione, di interrogazione, e controllo
+    della connessione morta."""
     url = make_url(expand(conn_str, name=env_name))
+    driver = url.get_driver_name()
     connect_args = connect_args_per(url, secondi)
+
+    if secondi_query and driver in QUERY_TIMEOUT_CONNECT_ARG:
+        nome, unita = QUERY_TIMEOUT_CONNECT_ARG[driver]
+        connect_args[nome] = secondi_query * unita
 
     # pool_pre_ping: una connessione chiusa dal server mentre era nel pool
     # verrebbe usata lo stesso, e fallirebbe con un errore incomprensibile.
-    return create_engine(url, pool_pre_ping=True, connect_args=connect_args)
+    engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
+
+    comando_sessione = QUERY_TIMEOUT_SESSION_SQL.get(driver)
+    if secondi_query and comando_sessione:
+        istruzione = comando_sessione.format(ms=secondi_query * 1000)
+
+        def _imposta_timeout_sessione(dbapi_connection, connection_record):
+            cursore = dbapi_connection.cursor()
+            try:
+                cursore.execute(istruzione)
+                # Senza commit il SET resta in una transazione implicita mai
+                # confermata: il primo ROLLBACK che SQLAlchemy emette su
+                # questa stessa connessione (al rientro nel pool, o
+                # sull'autobegin del turno successivo) lo annulla in
+                # silenzio, e il timeout smette di valere dalla seconda
+                # query in poi. Verificato dal vivo: SHOW statement_timeout
+                # tornava a 0 al secondo prestito della stessa connessione.
+                dbapi_connection.commit()
+            finally:
+                cursore.close()
+
+        event.listen(engine, "connect", _imposta_timeout_sessione)
+
+    return engine
 
 
 class Annullabile:

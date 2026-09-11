@@ -245,6 +245,17 @@ secondi), perche' senza si eredita quello di sistema su TCP, che puo' essere di
 minuti. E nella scheda *Scelta* compare un pulsante **Annulla** mentre la
 lettura e' in corso: chiude le connessioni e il confronto si ferma.
 
+C'e' anche un secondo timeout, per l'interrogazione (60 secondi): il primo
+non protegge da una query che si blocca *dopo* essersi connessa — uno schema
+enorme, un lock su una tabella di sistema. Ogni motore lo espone in un modo
+diverso: pymssql e oracledb hanno un vero timeout per chiamata passato in
+connessione, PostgreSQL e MySQL non ce l'hanno e serve una variabile di
+sessione (`SET statement_timeout`, `SET SESSION max_execution_time`) impostata
+a ogni nuova connessione fisica. Verificato sui quattro motori con una query
+che dorme piu' del timeout consentito, incluso il caso che l'aveva scoperto:
+la connessione viene restituita al pool e poi riusata una seconda volta, e il
+limite deve continuare a valere.
+
 ## Tracciabilita': da dove viene questo script
 
 Lo script `.sql` che DiFFDB produce e' un *change* che finira' in produzione.
