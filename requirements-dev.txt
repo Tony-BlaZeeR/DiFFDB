@@ -1,4 +1,18 @@
+# Ambiente di sviluppo: il pacchetto installato in modalita' modificabile piu'
+# gli strumenti di test, qualita' e build. Le versioni dei runtime restano
+# fissate in requirements.txt, che e' quello che usa la build dell'eseguibile.
 -r requirements.txt
+-e .
+
 pytest==8.3.4
 pytest-qt==4.4.0
+pytest-cov==6.0.0
+
+# Gli stessi controlli che gira la CI: falli girare prima di aprire una PR.
+ruff==0.9.6
+pip-audit==2.9.0
+cyclonedx-bom==6.1.1
+
 pyinstaller==6.11.1
+build==1.2.2
+hatchling==1.27.0

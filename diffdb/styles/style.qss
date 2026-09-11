@@ -1,0 +1,377 @@
+/* Dark Theme QSS */
+
+QWidget {
+    background-color: #2B2B2B;
+    color: #A9B7C6;
+    font-family: "Segoe UI", "Arial", sans-serif;
+    font-size: 12px;
+}
+
+/* Le etichette ereditavano il fondo di QWidget e, dentro un riquadro piu'
+   chiaro, disegnavano una banda scura larga quanto loro. */
+QLabel {
+    background-color: transparent;
+}
+
+QPushButton {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+    padding: 5px;
+    border-radius: 3px;
+}
+
+QPushButton:hover {
+    background-color: #4C5052;
+}
+
+QPushButton:pressed {
+    background-color: #2B2B2B;
+}
+
+QLineEdit, QPlainTextEdit, QTextEdit {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+    padding: 3px;
+    border-radius: 3px;
+}
+
+QTabWidget::pane {
+    border: 1px solid #555555;
+}
+
+QTabBar::tab {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+    padding: 5px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+}
+
+QTabBar::tab:selected {
+    background-color: #2B2B2B;
+    border-bottom-color: #2B2B2B;
+}
+
+QTabBar::tab:hover {
+    background-color: #4C5052;
+}
+
+QMenuBar {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+}
+
+QMenuBar::item {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    padding: 5px;
+}
+
+QMenuBar::item:selected {
+    background-color: #4C5052;
+}
+
+QMenu {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+}
+
+QMenu::item {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    padding: 5px;
+}
+
+QMenu::item:selected {
+    background-color: #4C5052;
+}
+
+QToolBar {
+    background-color: #3C3F41;
+    border: 1px solid #555555;
+}
+
+QStatusBar {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+}
+
+QTableWidget::item {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+}
+
+QHeaderView::section {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+    padding: 5px;
+}
+
+QTableCornerButton::section {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+}
+
+QScrollBar:vertical {
+    background-color: #3C3F41;
+    width: 15px;
+    margin: 15px 3px 15px 3px;
+    border: 1px solid #555555;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #555555;
+    min-height: 20px;
+    border-radius: 3px;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    background-color: #3C3F41;
+    border: 1px solid #555555;
+    height: 15px;
+    subcontrol-origin: margin;
+}
+
+QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {
+    background-color: #4C5052;
+}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background-color: #3C3F41;
+}
+
+/* La barra orizzontale mancava: senza queste regole veniva disegnata con la
+   palette chiara di sistema, e in fondo a un albero scuro sembrava un difetto. */
+QScrollBar:horizontal {
+    background-color: #3C3F41;
+    height: 15px;
+    margin: 3px 15px 3px 15px;
+    border: 1px solid #555555;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #555555;
+    min-width: 20px;
+    border-radius: 3px;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    background-color: #3C3F41;
+    border: 1px solid #555555;
+    width: 15px;
+    subcontrol-origin: margin;
+}
+
+QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover {
+    background-color: #4C5052;
+}
+
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background-color: #3C3F41;
+}
+
+/* Alberi e tabelle: senza alternate-background-color le righe alternate
+   usavano il colore chiaro di default dentro un tema scuro. */
+QTreeView, QTreeWidget, QTableView, QTableWidget, QListView {
+    background-color: #313335;
+    alternate-background-color: #35383A;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+    selection-background-color: #4C5052;
+    selection-color: #FFFFFF;
+}
+
+QTreeView::item, QTreeWidget::item {
+    padding: 3px 2px;
+    border: none;
+}
+
+QTreeView::item:selected, QTreeWidget::item:selected {
+    background-color: #4C5052;
+}
+
+/* Le caselle di spunta non erano stilizzate: comparivano come quadrati chiari
+   su fondo scuro, ed erano la cosa piu' vistosa della scheda Risultati. */
+QTreeView::indicator, QTreeWidget::indicator,
+QTableWidget::indicator, QCheckBox::indicator {
+    width: 13px;
+    height: 13px;
+    border: 1px solid #6A6A6A;
+    border-radius: 2px;
+    background-color: #3C3F41;
+}
+
+QTreeView::indicator:hover, QTreeWidget::indicator:hover,
+QCheckBox::indicator:hover {
+    border-color: #8A8A8A;
+}
+
+QTreeView::indicator:checked, QTreeWidget::indicator:checked,
+QTableWidget::indicator:checked, QCheckBox::indicator:checked {
+    background-color: #97B188;
+    border-color: #97B188;
+}
+
+QTreeView::indicator:indeterminate, QTreeWidget::indicator:indeterminate {
+    background-color: #D9A343;
+    border-color: #D9A343;
+}
+
+QComboBox {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+    border-radius: 3px;
+    padding: 4px 6px;
+}
+
+QComboBox:hover {
+    border-color: #6A6A6A;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 18px;
+}
+
+/* La tendina aperta e' una finestra a se': senza regola restava chiara. */
+QComboBox QAbstractItemView {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+    selection-background-color: #4C5052;
+    selection-color: #FFFFFF;
+}
+
+QToolTip {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+    padding: 4px;
+}
+
+/* --- gerarchia ---------------------------------------------------------- */
+
+/* L'azione principale di una schermata. Si applica con
+   pulsante.setProperty("ruolo", "primario"). */
+QPushButton[ruolo="primario"] {
+    background-color: #4B6EAF;
+    color: #FFFFFF;
+    border: 1px solid #5C82C8;
+    padding: 8px 18px;
+    font-weight: bold;
+}
+
+QPushButton[ruolo="primario"]:hover {
+    background-color: #5C82C8;
+}
+
+QPushButton[ruolo="primario"]:pressed {
+    background-color: #3F5C93;
+}
+
+QPushButton[ruolo="primario"]:disabled {
+    background-color: #3C3F41;
+    color: #6A6A6A;
+    border-color: #555555;
+}
+
+QLabel[ruolo="titolo"] {
+    font-size: 20px;
+    font-weight: bold;
+    color: #D4D4D4;
+}
+
+QLabel[ruolo="sottotitolo"] {
+    font-size: 13px;
+    color: #9FABB4;   /* 4.53:1 sul fondo piu' chiaro (era 4.31:1) */
+}
+
+QLabel[ruolo="didascalia"] {
+    font-size: 11px;
+    color: #A2ABB1;   /* 4.54:1 sul fondo piu' chiaro (era 3.07:1) */
+}
+
+QLabel[ruolo="conteggio"] {
+    font-size: 22px;
+    font-weight: bold;
+    color: #D4D4D4;
+}
+
+/* Pastiglie: dove sta la password, quante differenze per categoria. */
+QLabel[pastiglia="neutra"], QLabel[pastiglia="buona"],
+QLabel[pastiglia="attenzione"], QLabel[pastiglia="allarme"] {
+    border-radius: 8px;
+    padding: 2px 8px;
+    font-size: 11px;
+}
+
+QLabel[pastiglia="neutra"] {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: 1px solid #555555;
+}
+
+QLabel[pastiglia="buona"] {
+    background-color: #33402D;
+    color: #A5C08C;
+    border: 1px solid #4A5C3E;
+}
+
+QLabel[pastiglia="attenzione"] {
+    background-color: #4A3B22;
+    color: #E0B978;
+    border: 1px solid #6B5530;
+}
+
+QLabel[pastiglia="allarme"] {
+    background-color: #4A2A26;
+    color: #E08A7D;
+    border: 1px solid #6B3B35;
+}
+
+/* Riquadro che raggruppa: usato per le sezioni delle schermate. */
+QFrame[ruolo="riquadro"] {
+    background-color: #313335;
+    border: 1px solid #4A4A4A;
+    border-radius: 4px;
+}
+
+QFrame[ruolo="separatore"] {
+    background-color: #4A4A4A;
+    max-height: 1px;
+    border: none;
+}
+
+/* Custom title bar */
+#titleBar {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    padding: 5px;
+}
+
+#titleBar QLabel {
+    background-color:  #3C3F41;
+    color: #A9B7C6;
+}
+
+#titleBar QPushButton {
+    background-color: #3C3F41;
+    color: #A9B7C6;
+    border: none;
+    padding: 5px;
+}
+
+#titleBar QPushButton:hover {
+    background-color: #4C5052;
+}
+
+#titleBar QPushButton:pressed {
+    background-color: #2B2B2B;
+}

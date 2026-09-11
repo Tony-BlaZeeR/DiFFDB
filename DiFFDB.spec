@@ -11,12 +11,17 @@ block_cipher = None
 
 # Su Windows PyInstaller vuole un .ico. Se non c'e', si costruisce senza icona
 # invece di far fallire la build (per generarlo: vedi README, sezione Build).
-icon = "images/logo.ico" if os.path.exists("images/logo.ico") else None
+icon = "diffdb/images/logo.ico" if os.path.exists("diffdb/images/logo.ico") else None
 
+# Le risorse stanno dentro il pacchetto: nel bundle vanno nella stessa
+# posizione, perche' diffdb/paths.py le cerca sotto _MEIPASS/diffdb.
 datas = [
-    ("ui", "ui"),
-    ("styles", "styles"),
-    ("images", "images"),
+    ("diffdb/ui", "diffdb/ui"),
+    ("diffdb/styles", "diffdb/styles"),
+    ("diffdb/images", "diffdb/images"),
+    # Solo i cataloghi compilati: i .ts sono i sorgenti della traduzione.
+    # Vanno rigenerati prima della build (vedi README, sezione Traduzioni).
+    ("diffdb/translations/*.qm", "diffdb/translations"),
 ]
 
 # I driver DB sono importati dinamicamente da SQLAlchemy: vanno dichiarati a mano.

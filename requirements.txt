@@ -4,10 +4,14 @@ PySide6==6.8.1
 QtAwesome==1.4.0
 QtPy==2.4.3
 
+# Password nel portachiavi del sistema operativo (DPAPI/Keychain/Secret Service)
+# invece che in chiaro nel file delle connessioni.
+keyring==25.6.0
+
 openpyxl==3.1.5
 pandas==2.3.1
 SQLAlchemy==2.0.41
-sqlparse==0.5.3
+sqlparse==0.6.0        # 0.5.3 aveva 10 CVE note (PYSEC-2026-369x)
 
 # Driver: installa solo quelli che ti servono.
 psycopg2-binary==2.9.10   # PostgreSQL - nessuna dipendenza di sistema

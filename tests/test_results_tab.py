@@ -13,9 +13,9 @@ from sqlalchemy import create_engine, text
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.diff_DB import compare_environments  # noqa: E402
-from src.qt import Qt, QtWidgets  # noqa: E402
-from src.results_tab import ResultsTab  # noqa: E402
+from diffdb.diff_DB import compare_environments  # noqa: E402
+from diffdb.qt import Qt, QtWidgets  # noqa: E402
+from diffdb.results_tab import ResultsTab  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -28,7 +28,8 @@ def diff(tmp_path):
     svi = f"sqlite:///{tmp_path / 'svi.db'}"
     col = f"sqlite:///{tmp_path / 'col.db'}"
     for url, ddl in (
-        (svi, ["CREATE TABLE clienti (id INTEGER PRIMARY KEY, nome VARCHAR(50), email VARCHAR(120))",
+        (svi, ["CREATE TABLE clienti (id INTEGER PRIMARY KEY, nome VARCHAR(50), "
+               "email VARCHAR(120))",
                "CREATE TABLE ordini (id INTEGER PRIMARY KEY)"]),
         (col, ["CREATE TABLE clienti (id INTEGER PRIMARY KEY, nome VARCHAR(50))"]),
     ):
@@ -100,7 +101,7 @@ def test_export_excel_passa_il_diff_completo(app, diff):
 def test_export_sql_manda_solo_i_selezionati(app, diff):
     """Il cuore del punto 3: spunto una sola differenza ed esporto solo quella."""
     ricevuti = []
-    tab = _tab(app, on_export_sql=ricevuti.append)
+    tab = _tab(app, on_export_sql=lambda d, totali=None: ricevuti.append((d, totali)))
     tab.show_result(diff)
 
     # tengo selezionata solo la prima foglia
@@ -111,14 +112,17 @@ def test_export_sql_manda_solo_i_selezionati(app, diff):
 
     tab._export_sql()
     assert len(ricevuti) == 1
-    esportato = ricevuti[0]
+    esportato, totali = ricevuti[0]
     assert len(esportato.all) == 1                 # solo la differenza spuntata
     assert esportato.snapshot1.env_name == diff.snapshot1.env_name  # snapshot preservati
+    # Il totale viaggia con l'export: l'intestazione dello script deve poter
+    # dire che e' parziale.
+    assert totali == len(diff.all) > 1
 
 
 def test_export_sql_senza_selezione_non_chiama_il_callback(app, diff, monkeypatch):
     ricevuti = []
-    tab = _tab(app, on_export_sql=ricevuti.append)
+    tab = _tab(app, on_export_sql=lambda d, totali=None: ricevuti.append(d))
     tab.show_result(diff)
     tab._set_all_checked(False)
 

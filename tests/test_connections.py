@@ -7,8 +7,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import cli, connections  # noqa: E402
-from src.connections import Connection, load_connections, parse_text, save_connections  # noqa: E402
+from diffdb import cli, connections  # noqa: E402
+from diffdb.connections import (  # noqa: E402
+    Connection,
+    load_connections,
+    parse_text,
+    save_connections,
+)
 
 
 @pytest.fixture

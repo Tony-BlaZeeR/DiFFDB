@@ -1,0 +1,653 @@
+import logging
+
+import qtawesome as qta
+
+from diffdb import i18n, keystore, preferences
+from diffdb.choose_tab import ChooseTab
+from diffdb.connections import load_connections, save_connections, usa_portachiavi
+from diffdb.dialogs import ask_connection
+from diffdb.home_tab import HomeTab
+from diffdb.paths import config_dir, resource_path
+from diffdb.qt import Qt, QtCore, QtGui, QtWidgets, bind_children, load_ui
+from diffdb.report import slug, write_excel, write_sql
+from diffdb.results_tab import ResultsTab
+from diffdb.rules import NESSUNA, RegoleNonValide, carica, cerca
+from diffdb.snapshot_io import SnapshotFile
+from diffdb.urls import mask_password, password_letterale, sanitize
+from diffdb.worker import CompareWorker, SnapshotWorker
+
+logger = logging.getLogger(__name__)
+
+ICON_COLOR = "#A9B7C6"
+TAB_HOME, TAB_CONFIGURAZIONE, TAB_SCELTA, TAB_RISULTATI = range(4)
+COL_NAME, COL_STRING, COL_PASSWORD, COL_SCHEMA, COL_EDIT, COL_DELETE = range(6)
+
+
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.drag_position = None
+        self.connections = []
+        self.thread = None
+        self.worker = None
+        self.output_dir = preferences.cartella_output(str(config_dir()))
+        self.regole = _carica_regole()
+
+        self._ui = load_ui(resource_path("ui", "main_window.ui"))
+        self.setCentralWidget(self._ui.centralWidget())
+        bind_children(self.centralWidget(), self)
+        # Solo il minimo: il .ui dichiarava minimo e massimo uguali, e la finestra
+        # non si poteva ridimensionare — con un albero a cinque colonne era un problema.
+        self.setMinimumSize(self._ui.minimumSize())
+        self.resize(self._ui.size())
+
+        with open(resource_path("styles", "style.qss"), encoding="utf-8") as qss:
+            self.setStyleSheet(qss.read())
+
+        self.setWindowTitle("DiFFDB")
+        self.setWindowIcon(QtGui.QIcon(resource_path("images", "logo.png")))
+        _set_windows_taskbar_identity()
+
+        self.create_custom_title_bar()
+        self.load_tabs()
+
+        table = self.conn_table()
+        table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        # Senza questo una connection string lunga manda la riga a capo in mezzo
+        # a un percorso: meglio troncarla e lasciarla intera nel tooltip.
+        table.setWordWrap(False)
+
+        self.connections = load_connections()
+        self.refresh_conn_table()
+        self.refresh_comboboxes()
+
+        self.tabWidget.currentChanged.connect(self.on_tab_changed)
+        self._scorciatoie_globali()
+
+        self._ripristina_geometria()
+        self._posiziona_presa()
+
+    def _scorciatoie_globali(self):
+        """Ctrl+1..4 per le schede, F5 per rifare l'ultimo confronto.
+
+        Senza queste, l'unico modo di cambiare scheda da tastiera e' arrivare
+        alla barra con Tab e muoversi con le frecce.
+        """
+        for numero, indice in enumerate(
+                (TAB_HOME, TAB_CONFIGURAZIONE, TAB_SCELTA, TAB_RISULTATI), start=1):
+            scorciatoia = QtGui.QShortcut(QtGui.QKeySequence(f"Ctrl+{numero}"), self)
+            scorciatoia.activated.connect(
+                lambda i=indice: self.tabWidget.setCurrentIndex(i))
+
+        aggiorna = QtGui.QShortcut(QtGui.QKeySequence("F5"), self)
+        aggiorna.activated.connect(self.start_comparison)
+
+    # --- accesso ai tab ---------------------------------------------------
+
+    def conn_table(self):
+        return self.tabWidget.widget(TAB_CONFIGURAZIONE).conn_table
+
+    def scelta_tab(self):
+        return self.choose_tab
+
+    # --- gestione connessioni ---------------------------------------------
+
+    def refresh_conn_table(self):
+        """Ricostruisce la tabella dal modello in memoria.
+
+        Va rifatta da zero a ogni modifica: i pulsanti riga catturano l'indice,
+        che dopo una cancellazione non corrisponderebbe piu' alla riga giusta.
+        """
+        table = self.conn_table()
+        table.setRowCount(0)
+        table.setColumnCount(6)
+        table.verticalHeader().setVisible(False)   # i numeri di riga non dicono niente
+        for column, title in ((COL_NAME, self.tr("Nome")),
+                              (COL_STRING, self.tr("Connessione")),
+                              (COL_PASSWORD, self.tr("Password")),
+                              (COL_SCHEMA, self.tr("Schema")),
+                              (COL_EDIT, ""), (COL_DELETE, "")):
+            table.setHorizontalHeaderItem(column, QtWidgets.QTableWidgetItem(title))
+
+        for row, connection in enumerate(self.connections):
+            table.insertRow(row)
+            table.setItem(row, COL_NAME, QtWidgets.QTableWidgetItem(connection.name))
+
+            url = QtWidgets.QTableWidgetItem(mask_password(connection.conn_string))
+            url.setToolTip(mask_password(connection.conn_string))
+            table.setItem(row, COL_STRING, url)
+
+            table.setCellWidget(row, COL_PASSWORD, self._pastiglia_password(connection))
+            table.setItem(row, COL_SCHEMA, QtWidgets.QTableWidgetItem(connection.schema or ""))
+
+            edit_button = QtWidgets.QPushButton()
+            edit_button.setIcon(qta.icon("fa5s.pencil-alt", color=ICON_COLOR))
+            edit_button.setToolTip(self.tr("Modifica"))
+            edit_button.setAccessibleName(
+                self.tr("Modifica la connessione {0}").format(connection.name))
+            edit_button.clicked.connect(lambda _=False, r=row: self.edit_connection(r))
+            table.setCellWidget(row, COL_EDIT, edit_button)
+
+            delete_button = QtWidgets.QPushButton()
+            delete_button.setIcon(qta.icon("fa5s.trash-alt", color=ICON_COLOR))
+            delete_button.setToolTip(self.tr("Elimina"))
+            delete_button.setAccessibleName(
+                self.tr("Elimina la connessione {0}").format(connection.name))
+            delete_button.clicked.connect(lambda _=False, r=row: self.delete_connection(r))
+            table.setCellWidget(row, COL_DELETE, delete_button)
+
+        # La connessione e' la colonna lunga: prende lo spazio che avanza invece
+        # di essere troncata a meta' come le altre.
+        header = table.horizontalHeader()
+        for column in (COL_NAME, COL_PASSWORD, COL_SCHEMA, COL_EDIT, COL_DELETE):
+            header.setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(COL_STRING, QtWidgets.QHeaderView.ResizeMode.Stretch)
+
+    def _pastiglia_password(self, connection) -> QtWidgets.QLabel:
+        """Dove sta davvero la password di questa connessione.
+
+        E' l'informazione che rende visibile la differenza fra una connessione
+        a posto e una con il segreto scritto nel file.
+        """
+        if usa_portachiavi(connection):
+            testo, tipo = self.tr("portachiavi"), "buona"
+        elif password_letterale(connection.conn_string):
+            testo, tipo = self.tr("in chiaro"), "allarme"
+        elif "://" in connection.conn_string and "@" in connection.conn_string:
+            testo, tipo = self.tr("variabile"), "neutra"
+        else:
+            testo, tipo = "—", "neutra"
+
+        etichetta = QtWidgets.QLabel(testo)
+        etichetta.setProperty("pastiglia", tipo)
+        etichetta.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        return etichetta
+
+    def persist(self):
+        save_connections(self.connections)
+        self.refresh_conn_table()
+        self.refresh_comboboxes()
+
+    def add_connection(self):
+        connection = ask_connection(self)
+        if connection is not None:
+            self.connections.append(connection)
+            self.persist()
+
+    def edit_connection(self, row):
+        if not 0 <= row < len(self.connections):
+            return
+        connection = ask_connection(self, self.connections[row])
+        if connection is not None:
+            self.connections[row] = connection
+            self.persist()
+
+    def delete_connection(self, row):
+        if not 0 <= row < len(self.connections):
+            return
+        name = self.connections[row].name
+        confirm = QtWidgets.QMessageBox.question(
+            self, self.tr("Elimina connessione"),
+            self.tr("Eliminare la connessione '{0}'?").format(name),
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
+            del self.connections[row]
+            # Via anche la password: una voce orfana nel portachiavi resterebbe
+            # li' per sempre, e tornerebbe a galla se qualcuno riusasse il nome.
+            if keystore.elimina(name):
+                logger.info("Rimossa dal portachiavi la password di '%s'.", name)
+            self.persist()
+
+    # --- barra del titolo --------------------------------------------------
+
+    def create_custom_title_bar(self):
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        title_bar = QtWidgets.QWidget(self)
+        title_bar.setObjectName("titleBar")
+        layout = QtWidgets.QHBoxLayout(title_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        logo_label = QtWidgets.QLabel(title_bar)
+        logo_label.setPixmap(_logo(20))
+
+        title_label = QtWidgets.QLabel("DiFFDB", title_bar)
+        title_label.setObjectName("titleLabel")
+
+        minimize_button = QtWidgets.QPushButton("_", title_bar)
+        minimize_button.setObjectName("minimizeButton")
+        minimize_button.setToolTip(self.tr("Riduci a icona"))
+        minimize_button.setAccessibleName(self.tr("Riduci a icona"))
+        minimize_button.clicked.connect(self.showMinimized)
+
+        self.maximize_button = QtWidgets.QPushButton("□", title_bar)
+        self.maximize_button.setObjectName("maximizeButton")
+        self.maximize_button.setToolTip(self.tr("Ingrandisci"))
+        self.maximize_button.setAccessibleName(self.tr("Ingrandisci"))
+        self.maximize_button.clicked.connect(self.toggle_maximized)
+
+        close_button = QtWidgets.QPushButton("X", title_bar)
+        close_button.setObjectName("closeButton")
+        close_button.setToolTip(self.tr("Chiudi"))
+        close_button.setAccessibleName(self.tr("Chiudi la finestra"))
+        close_button.clicked.connect(self.close)
+
+        layout.addWidget(logo_label)
+        layout.addWidget(title_label)
+        layout.addStretch()
+        layout.addWidget(minimize_button)
+        layout.addWidget(self.maximize_button)
+        layout.addWidget(close_button)
+
+        self.setMenuWidget(title_bar)
+        # Il trascinamento vale solo sulla barra: prima era attaccato alla finestra
+        # intera, e si spostava tutto trascinando un punto vuoto qualsiasi.
+        title_bar.mousePressEvent = self._inizia_trascinamento
+        title_bar.mouseMoveEvent = self._trascina
+        title_bar.mouseDoubleClickEvent = lambda _event: self.toggle_maximized()
+
+        # Una finestra senza cornice non si ridimensiona dai bordi: serve una presa.
+        self.size_grip = QtWidgets.QSizeGrip(self)
+        self.size_grip.setFixedSize(16, 16)
+
+    def toggle_maximized(self):
+        if self.isMaximized():
+            self.showNormal()
+            self.maximize_button.setText("□")
+            self.maximize_button.setToolTip(self.tr("Ingrandisci"))
+        else:
+            self.showMaximized()
+            self.maximize_button.setText("❐")
+            self.maximize_button.setToolTip(self.tr("Ripristina"))
+        self._posiziona_presa()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._posiziona_presa()
+
+    def _posiziona_presa(self):
+        if getattr(self, "size_grip", None) is None:
+            return
+        self.size_grip.move(self.width() - self.size_grip.width(),
+                            self.height() - self.size_grip.height())
+        self.size_grip.setVisible(not self.isMaximized())
+        self.size_grip.raise_()
+
+    def _inizia_trascinamento(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and not self.isMaximized():
+            self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def _trascina(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_position is not None \
+                and not self.isMaximized():
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+
+    def _ripristina_geometria(self):
+        salvata = preferences.geometria()
+        if salvata is None:
+            return
+        self.resize(salvata["larghezza"], salvata["altezza"])
+        self.move(salvata["x"], salvata["y"])
+        if salvata["massimizzata"]:
+            self.toggle_maximized()
+
+    def closeEvent(self, event):
+        # Da massimizzata si salva la dimensione normale: al riavvio si torna
+        # massimizzati, e chi ripristina ritrova la finestra di prima.
+        normale = self.normalGeometry() if self.isMaximized() else self.geometry()
+        preferences.imposta_geometria(
+            normale.width(), normale.height(), normale.x(), normale.y(), self.isMaximized())
+        super().closeEvent(event)
+
+    # --- tab ---------------------------------------------------------------
+
+    def load_tabs(self):
+        tab_config = load_ui(resource_path("ui", "configurazione.ui"))
+
+        self.home_tab = HomeTab()
+        self.choose_tab = ChooseTab()
+        self.results_tab = ResultsTab(
+            on_export_excel=self.export_excel, on_export_sql=self.export_sql)
+
+        self.tabWidget.insertTab(TAB_HOME, self.home_tab,
+                                 qta.icon("fa5s.home", color=ICON_COLOR), self.tr("Home"))
+        self.tabWidget.insertTab(TAB_CONFIGURAZIONE, tab_config,
+                                 qta.icon("fa5s.cog", color=ICON_COLOR), self.tr("Configurazione"))
+        self.tabWidget.insertTab(TAB_SCELTA, self.choose_tab,
+                                 qta.icon("fa5s.database", color=ICON_COLOR), self.tr("Scelta"))
+        self.tabWidget.insertTab(TAB_RISULTATI, self.results_tab,
+                                 qta.icon("fa5s.exchange-alt", color=ICON_COLOR),
+                                 self.tr("Risultati"))
+
+        self.home_tab.vai_al_confronto.connect(
+            lambda: self.tabWidget.setCurrentIndex(TAB_SCELTA))
+        self.home_tab.vai_alle_connessioni.connect(
+            lambda: self.tabWidget.setCurrentIndex(TAB_CONFIGURAZIONE))
+        self.home_tab.ripeti_confronto.connect(self.ripeti_confronto)
+
+        self.choose_tab.confronta.connect(self.start_comparison)
+        self.choose_tab.annulla_operazione.connect(self.annulla_operazione)
+        self.choose_tab.salva_snapshot.connect(self.save_snapshot)
+        self.choose_tab.confronta_con_file.connect(self.compare_with_snapshot_file)
+
+        self._sistema_intestazione_connessioni(tab_config)
+        self._aggiungi_preferenze(tab_config)
+        tab_config.add_conn_button.clicked.connect(self.add_connection)
+
+    def _sistema_intestazione_connessioni(self, tab_config):
+        """Titolo a sinistra e pulsante a destra, al posto di un pulsante largo
+        quanto la finestra che dominava la schermata."""
+        layout = tab_config.layout()
+        pulsante = tab_config.add_conn_button
+        if layout is None:
+            return
+
+        layout.removeWidget(pulsante)
+        pulsante.setText(self.tr("Aggiungi connessione"))
+        pulsante.setIcon(qta.icon("fa5s.plus", color=ICON_COLOR))
+        pulsante.setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum,
+                               QtWidgets.QSizePolicy.Policy.Fixed)
+
+        titolo = QtWidgets.QLabel(self.tr("Connessioni"), tab_config)
+        titolo.setProperty("ruolo", "titolo")
+
+        riga = QtWidgets.QHBoxLayout()
+        riga.addWidget(titolo)
+        riga.addStretch()
+        riga.addWidget(pulsante)
+        layout.insertLayout(0, riga)
+
+    def _aggiungi_preferenze(self, tab_config):
+        """Sezione preferenze, separata dall'elenco delle connessioni.
+
+        Cambiare lingua richiede un riavvio: i testi dei widget si fissano quando
+        i widget vengono creati, e ricostruire tutta la finestra a caldo
+        costerebbe molto piu' di quanto valga.
+        """
+        layout = tab_config.layout()
+        if layout is None:
+            return
+
+        separatore = QtWidgets.QFrame(tab_config)
+        separatore.setProperty("ruolo", "separatore")
+        separatore.setFixedHeight(1)
+
+        intestazione = QtWidgets.QLabel(self.tr("Preferenze"), tab_config)
+        intestazione.setProperty("ruolo", "didascalia")
+
+        riga = QtWidgets.QHBoxLayout()
+        riga.addWidget(QtWidgets.QLabel(self.tr("Lingua:"), tab_config))
+
+        self.language_combo = QtWidgets.QComboBox(tab_config)
+        for codice, nome in i18n.lingue_disponibili().items():
+            self.language_combo.addItem(nome, codice)
+        indice = self.language_combo.findData(preferences.lingua())
+        if indice >= 0:
+            self.language_combo.setCurrentIndex(indice)
+        self.language_combo.currentIndexChanged.connect(self._cambia_lingua)
+
+        riga.addWidget(self.language_combo)
+        riga.addStretch()
+
+        layout.addWidget(separatore)
+        layout.addWidget(intestazione)
+        layout.addLayout(riga)
+
+    def _cambia_lingua(self):
+        codice = self.language_combo.currentData()
+        if codice == preferences.lingua():
+            return
+        preferences.imposta_lingua(codice)
+        QtWidgets.QMessageBox.information(
+            self, self.tr("Lingua"),
+            self.tr("La nuova lingua sara' attiva al prossimo avvio di DiFFDB."))
+
+    def refresh_comboboxes(self):
+        self.choose_tab.imposta_connessioni(self.connections)
+        self.home_tab.aggiorna(self.connections, preferences.ultimo_confronto())
+
+    def selected_connections(self):
+        return self.choose_tab.selezionate()
+
+    def ripeti_confronto(self, riferimento: str, da_allineare: str):
+        """Riesegue l'ultimo confronto dalla schermata iniziale."""
+        for combo, nome in ((self.choose_tab.comboBox1, riferimento),
+                            (self.choose_tab.comboBox2, da_allineare)):
+            indice = combo.findData(nome)
+            if indice < 0:
+                QtWidgets.QMessageBox.warning(
+                    self, self.tr("Ambiente non trovato"),
+                    self.tr("La connessione '{0}' non esiste piu'.").format(nome))
+                self.tabWidget.setCurrentIndex(TAB_SCELTA)
+                return
+            combo.setCurrentIndex(indice)
+
+        self.tabWidget.setCurrentIndex(TAB_SCELTA)
+        self.start_comparison()
+
+    def on_tab_changed(self, index):
+        if index in (TAB_HOME, TAB_SCELTA):
+            self.refresh_comboboxes()
+
+    # --- confronto ---------------------------------------------------------
+
+    def start_comparison(self):
+        conn1, conn2 = self.selected_connections()
+        if conn1 is None or conn2 is None:
+            QtWidgets.QMessageBox.warning(
+                self, self.tr("Connessioni mancanti"),
+                self.tr("Configura almeno due connessioni nella scheda Configurazione."))
+            return
+        if conn1.name == conn2.name:
+            QtWidgets.QMessageBox.warning(
+                self, self.tr("Ambienti uguali"),
+                self.tr("Seleziona due ambienti diversi da confrontare."))
+            return
+
+        self.choose_tab.imposta_stato(self.tr("Confronto in corso..."))
+        self._run(CompareWorker(conn1, conn2, self.regole), self.on_comparison_done)
+
+    def compare_with_snapshot_file(self):
+        """Confronta il primo ambiente selezionato con uno snapshot salvato."""
+        conn1, _ = self.selected_connections()
+        if conn1 is None:
+            QtWidgets.QMessageBox.warning(
+                self, self.tr("Nessun ambiente"),
+                self.tr("Seleziona l'ambiente da confrontare con lo snapshot."))
+            return
+
+        path, _filter = QtWidgets.QFileDialog.getOpenFileName(
+            self, self.tr("Snapshot da confrontare"), self.output_dir,
+            self.tr("Snapshot DiFFDB (*.json)"))
+        if not path:
+            return
+
+        try:
+            baseline = SnapshotFile.at(path)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, self.tr("Snapshot illeggibile"), str(exc))
+            return
+
+        # La baseline sta a sinistra: si legge "cosa e' cambiato da allora a oggi".
+        self.choose_tab.imposta_stato(self.tr("Confronto con lo snapshot in corso..."))
+        self._run(CompareWorker(baseline, conn1, self.regole), self.on_comparison_done)
+
+    def save_snapshot(self):
+        """Salva su file la struttura del primo ambiente selezionato."""
+        conn1, _ = self.selected_connections()
+        if conn1 is None:
+            QtWidgets.QMessageBox.warning(
+                self, self.tr("Nessun ambiente"),
+                self.tr("Seleziona l'ambiente di cui salvare lo snapshot."))
+            return
+
+        suggested = str(config_dir() / f"snapshot_{slug(conn1.name)}.json")
+        path, _filter = QtWidgets.QFileDialog.getSaveFileName(
+            self, self.tr("Dove salvare lo snapshot"), suggested,
+            self.tr("Snapshot DiFFDB (*.json)"))
+        if not path:
+            return
+
+        self.choose_tab.imposta_stato(
+            self.tr("Lettura della struttura di {0}...").format(conn1.name))
+        self._run(SnapshotWorker(conn1, path, self.regole), self.on_snapshot_saved)
+
+    def on_comparison_done(self, diff):
+        self.cleanup_thread()
+
+        # Annotato per la schermata iniziale: e' la prima cosa che si cerca
+        # riaprendo l'applicazione.
+        preferences.imposta_ultimo_confronto(
+            diff.snapshot1.env_name, diff.snapshot2.env_name, len(diff.all),
+            QtCore.QDateTime.currentDateTimeUtc().toString(QtCore.Qt.DateFormat.ISODate))
+
+        # I risultati vanno nel tab: l'utente li rivede e decide cosa esportare.
+        self.results_tab.show_result(diff)
+        self.tabWidget.setCurrentIndex(TAB_RISULTATI)
+
+        if diff.is_empty:
+            self.choose_tab.imposta_stato(self.tr("Nessuna differenza trovata."))
+        else:
+            self.choose_tab.imposta_stato(
+                self.tr("{0} differenze trovate.").format(len(diff.all)))
+
+    def on_snapshot_saved(self, path):
+        self.cleanup_thread()
+        self.choose_tab.imposta_stato(self.tr("Snapshot salvato."))
+        QtWidgets.QMessageBox.information(
+            self, self.tr("Snapshot salvato"), self.tr("Salvato in:\n{0}").format(path))
+
+    def on_comparison_failed(self, message):
+        self.cleanup_thread()
+        self.choose_tab.imposta_stato(self.tr("Operazione fallita."))
+        # I driver mettono l'URL completo nei messaggi d'errore: va mascherato
+        # prima di finire in una finestra che l'utente fotografa e allega a un ticket.
+        QtWidgets.QMessageBox.critical(
+            self, self.tr("Errore di connessione"), sanitize(message))
+
+    def _run(self, worker, on_finished):
+        """Manda un worker su un thread suo. Uno alla volta: la GUI ne mostra uno solo."""
+        if self.thread is not None:
+            return
+        self._set_busy(True)
+
+        self.thread = QtCore.QThread(self)
+        self.worker = worker
+        worker.moveToThread(self.thread)
+        self.thread.started.connect(worker.run)
+        worker.progress.connect(self.choose_tab.imposta_stato)
+        worker.finished.connect(on_finished)
+        worker.failed.connect(self.on_comparison_failed)
+        if hasattr(worker, "annullato"):
+            worker.annullato.connect(self.on_annullato)
+        self.thread.start()
+
+    def annulla_operazione(self):
+        """Chiude le connessioni in corso: la lettura fallisce e il thread esce."""
+        if self.worker is not None and hasattr(self.worker, "annulla"):
+            self.choose_tab.imposta_stato(self.tr("Annullamento in corso..."))
+            self.worker.annulla()
+
+    def on_annullato(self):
+        self.cleanup_thread()
+        self.choose_tab.imposta_stato(self.tr("Operazione annullata."))
+
+    def _set_busy(self, busy: bool):
+        self.choose_tab.imposta_occupato(busy)
+
+    # --- export (richiamati dal tab dei risultati) -------------------------
+
+    def _ask_output_dir(self) -> str:
+        return QtWidgets.QFileDialog.getExistingDirectory(
+            self, self.tr("Dove salvare i file"), self.output_dir)
+
+    def export_excel(self, diff):
+        output_dir = self._ask_output_dir()
+        if not output_dir:
+            return
+        self.output_dir = output_dir
+        preferences.imposta_cartella_output(output_dir)
+        try:
+            path = write_excel(diff, output_dir)
+        except Exception as exc:
+            logger.exception("Scrittura Excel fallita")
+            QtWidgets.QMessageBox.critical(
+                self, self.tr("Errore"),
+                self.tr("Impossibile scrivere il file: {0}").format(exc))
+            return
+        QtWidgets.QMessageBox.information(
+            self, self.tr("Excel esportato"), self.tr("Salvato in:\n{0}").format(path))
+
+    def export_sql(self, diff, totali=None):
+        output_dir = self._ask_output_dir()
+        if not output_dir:
+            return
+        self.output_dir = output_dir
+        preferences.imposta_cartella_output(output_dir)
+        try:
+            written = write_sql(diff, output_dir, totali=totali)
+        except Exception as exc:
+            logger.exception("Scrittura SQL fallita")
+            QtWidgets.QMessageBox.critical(
+                self, self.tr("Errore"),
+                self.tr("Impossibile scrivere i file: {0}").format(exc))
+            return
+        if not written:
+            QtWidgets.QMessageBox.information(
+                self, self.tr("Niente da generare"),
+                self.tr("Le differenze selezionate non producono script (es. solo avvisi)."))
+            return
+        QtWidgets.QMessageBox.information(
+            self, self.tr("SQL esportato"),
+            self.tr("File generati:\n{0}").format("\n".join(written)))
+
+    def cleanup_thread(self):
+        self._set_busy(False)
+        if self.thread is not None:
+            self.thread.quit()
+            self.thread.wait()
+            self.thread = None
+            self.worker = None
+
+
+def _carica_regole():
+    """Regole trovate accanto alla configurazione, se ce ne sono.
+
+    Un file rotto non deve impedire l'avvio: si parte senza filtri e lo si
+    scrive nel log.
+    """
+    percorso = cerca([config_dir()])
+    if percorso is None:
+        return NESSUNA
+    try:
+        regole = carica(percorso)
+    except RegoleNonValide as exc:
+        logger.warning("Regole ignorate: %s", exc)
+        return NESSUNA
+    logger.info("Regole da '%s': %s", percorso, regole.descrizione() or "nessun filtro")
+    return regole
+
+
+def _logo(size: int) -> QtGui.QPixmap:
+    return QtGui.QPixmap(resource_path("images", "logo.png")).scaled(
+        size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+
+def _set_windows_taskbar_identity():
+    """Icona corretta nella taskbar di Windows. Su Linux e macOS non serve."""
+    import sys
+
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("diffdb.app.1.0")
+    except Exception as exc:  # pragma: no cover - dipende dalla versione di Windows
+        logger.debug("AppUserModelID non impostato: %s", exc)

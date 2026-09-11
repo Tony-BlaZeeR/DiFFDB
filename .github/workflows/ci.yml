@@ -4,9 +4,42 @@ on:
   push:
     branches: [main, dev-dbDiff]
   pull_request:
+  workflow_dispatch:
 
 jobs:
+  qualita:
+    name: Lint e sicurezza delle dipendenze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install ruff pip-audit cyclonedx-bom
+
+      - name: Lint
+        run: ruff check . --output-format=github
+
+      # Una dipendenza con una vulnerabilita' nota non deve passare in silenzio:
+      # e' cosi' che si scopre, non leggendo le mailing list.
+      - name: Vulnerabilita' note nelle dipendenze
+        run: pip-audit --requirement requirements.txt --progress-spinner off
+
+      # Distinta dei materiali: la chiede la sicurezza aziendale prima di
+      # approvare l'adozione, e generarla dopo costa molto piu' che ora.
+      - name: SBOM
+        run: cyclonedx-py requirements requirements.txt --output-format json --output-file sbom.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+
   test:
+    name: Unitari
+    needs: qualita
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -23,17 +56,174 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
 
       - name: Installa le dipendenze
-        run: pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt pytest-cov
 
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen   # la GUI si istanzia senza schermo
-        run: python -m pytest tests/ -v
+        # La soglia sta sotto la copertura attuale: serve a impedire che scenda,
+        # non a inseguire un numero.
+        run: >-
+          python -m pytest tests/ -v --ignore=tests/integration
+          --cov=diffdb --cov-report=term-missing --cov-fail-under=70
+
+      # Una stringa nuova non tradotta comparirebbe in italiano dentro
+      # l'interfaccia inglese: meglio accorgersene qui.
+      - name: Traduzioni complete
+        run: python tools/traduzioni.py --check
+
+  integration:
+    name: Integrazione (PostgreSQL, MySQL, SQL Server)
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: diffdb_pw1
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: diffdb_pw1
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pdiffdb_pw1"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+
+      mssql:
+        # Niente health-cmd: l'immagine non porta un client utilizzabile come
+        # healthcheck. Si aspetta il server nello step "Attendi SQL Server".
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "DiffDB_pw1!"
+          MSSQL_PID: Developer
+        ports: ["1433:1433"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installa le dipendenze
+        run: pip install -r requirements-dev.txt
+
+      - name: Attendi SQL Server
+        run: |
+          python - <<'PY'
+          import time
+          import sqlalchemy as sa
+
+          url = "mssql+pymssql://sa:DiffDB_pw1!@localhost:1433/master"
+          for tentativo in range(60):
+              try:
+                  sa.create_engine(url).connect().close()
+                  print("SQL Server pronto dopo", tentativo, "tentativi")
+                  break
+              except Exception as exc:
+                  print("...", exc.__class__.__name__)
+                  time.sleep(5)
+          else:
+              raise SystemExit("SQL Server non e' partito")
+          PY
+
+      - name: Test di integrazione
+        env:
+          DIFFDB_TEST_POSTGRESQL_URL: postgresql+psycopg2://postgres:diffdb_pw1@localhost:5432/postgres
+          DIFFDB_TEST_MYSQL_URL: mysql+pymysql://root:diffdb_pw1@localhost:3306/mysql
+          DIFFDB_TEST_MSSQL_URL: mssql+pymssql://sa:DiffDB_pw1!@localhost:1433/master
+          # Qui i tre motori ci sono: se uno non risponde il job deve diventare
+          # rosso, non verde con dei test saltati.
+          DIFFDB_TEST_STRICT: "1"
+        # Oracle ha un job suo: qui verrebbe saltato, e con STRICT attiva
+        # saltare e' un errore.
+        run: python -m pytest tests/integration -v -k "not oracle"
+
+  integration-oracle:
+    name: Integrazione (Oracle)
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      oracle:
+        # L'immagine "faststart" parte in un paio di minuti invece di dieci.
+        image: gvenzl/oracle-free:23-slim-faststart
+        env:
+          ORACLE_PASSWORD: diffdb_pw1
+        ports: ["1521:1521"]
+        options: >-
+          --health-cmd healthcheck.sh
+          --health-interval 10s --health-timeout 10s --health-retries 40
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installa le dipendenze
+        run: pip install -r requirements-dev.txt
+
+      - name: Test di integrazione
+        env:
+          # oracledb in thin mode: nessun Instant Client da installare.
+          DIFFDB_TEST_ORACLE_URL: oracle+oracledb://system:diffdb_pw1@localhost:1521/?service_name=FREEPDB1
+          DIFFDB_TEST_STRICT: "1"
+        # Gli altri tre dialetti non hanno la loro variabile qui: verrebbero
+        # saltati, e con STRICT attiva sarebbe un errore. Si seleziona Oracle.
+        run: python -m pytest tests/integration -v -k oracle
+
+  pacchetto:
+    name: Wheel e sdist
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install build
+      - run: python -m build
+
+      # Il wheel deve contenere le risorse, o l'applicazione installata non
+      # trova ne' i .ui ne' le traduzioni: meglio accorgersene qui.
+      - name: Le risorse sono nel wheel
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+
+          nomi = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          attesi = ["diffdb/ui/main_window.ui", "diffdb/styles/style.qss",
+                    "diffdb/images/logo.png", "diffdb/translations/diffdb_en.qm"]
+          mancanti = [a for a in attesi if a not in nomi]
+          if mancanti:
+              sys.exit("mancano dal wheel: " + ", ".join(mancanti))
+          print("risorse presenti nel wheel")
+          PY
+
+      - name: Il comando installato funziona
+        run: |
+          pip install "$(ls dist/*.whl)"
+          diffdb --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diffdb-pacchetto
+          path: dist/*
 
   build:
     # Eseguibile portable per ogni sistema: PyInstaller non fa cross-compile.
     if: startsWith(github.ref, 'refs/tags/')
-    needs: test
+    needs: [integration, integration-oracle, pacchetto]
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
@@ -45,7 +235,107 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: pyinstaller DiFFDB.spec
+
+      # --- firma -------------------------------------------------------------
+      #
+      # Un eseguibile non firmato non e' solo un avviso: con SmartScreen la
+      # maggior parte degli utenti si ferma, e dove c'e' AppLocker o WDAC non
+      # parte affatto. Su macOS Gatekeeper lo blocca del tutto.
+      #
+      # Dal giugno 2023 le chiavi dei certificati di firma devono stare su
+      # hardware o su un servizio cloud: non si puo' piu' mettere un .pfx in un
+      # secret. Qui si usa Azure Trusted Signing; DigiCert KeyLocker e SSL.com
+      # eSigner hanno action equivalenti.
+      #
+      # Senza i secret configurati i passi si saltano e la build produce
+      # comunque i binari, non firmati.
+
+      - name: Firma (Windows)
+        if: matrix.os == 'windows-latest' && vars.AZURE_SIGNING_ACCOUNT != ''
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: dist
+          files-folder-filter: exe
+          # La marca temporale fa restare valida la firma dopo la scadenza
+          # del certificato: senza, i binari "scadono".
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Firma e notarizzazione (macOS)
+        if: matrix.os == 'macos-latest' && vars.MACOS_SIGNING_IDENTITY != ''
+        env:
+          CERTIFICATO: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATO_PW: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          IDENTITA: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # Portachiavi usa e getta: il certificato non resta sul runner.
+          echo "$CERTIFICATO" | base64 --decode > certificato.p12
+          security create-keychain -p azione build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p azione build.keychain
+          security import certificato.p12 -k build.keychain -P "$CERTIFICATO_PW" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k azione build.keychain
+          rm certificato.p12
+
+          # Hardened runtime: senza, la notarizzazione viene rifiutata.
+          codesign --force --options runtime --timestamp --sign "$IDENTITA" dist/DiFFDB
+
+          # Si notarizza uno zip, poi il ticket si attacca all'eseguibile.
+          ditto -c -k --keepParent dist/DiFFDB dist/DiFFDB.zip
+          xcrun notarytool submit dist/DiFFDB.zip --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple dist/DiFFDB || true
+          rm dist/DiFFDB.zip
+
+      - name: Impronte dei file
+        shell: bash
+        run: |
+          cd dist
+          # Chi scarica deve poter verificare cosa ha scaricato.
+          if command -v sha256sum > /dev/null; then
+            sha256sum * > "SHA256SUMS-${{ matrix.os }}.txt"
+          else
+            shasum -a 256 * > "SHA256SUMS-${{ matrix.os }}.txt"
+          fi
+          cat "SHA256SUMS-${{ matrix.os }}.txt"
+
       - uses: actions/upload-artifact@v4
         with:
           name: DiFFDB-${{ matrix.os }}
           path: dist/*
+
+  release:
+    # Gli artifact scadono dopo 90 giorni: il link che dai a un collega smette
+    # di funzionare. Una release vera resta.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Raccogli i file
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -l release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

@@ -182,4 +182,8 @@ script_mancanti.sql
 !DiFFDB.spec
 connections.json
 
+# Preferenze dell'interfaccia: locali alla macchina, come le connessioni.
+diffdb.ini
+
 .claude/
+connessioniadapter
