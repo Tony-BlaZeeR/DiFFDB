@@ -248,10 +248,12 @@ lettura e' in corso: chiude le connessioni e il confronto si ferma.
 C'e' anche un secondo timeout, per l'interrogazione (60 secondi): il primo
 non protegge da una query che si blocca *dopo* essersi connessa — uno schema
 enorme, un lock su una tabella di sistema. Ogni motore lo espone in un modo
-diverso: pymssql e oracledb hanno un vero timeout per chiamata passato in
-connessione, PostgreSQL e MySQL non ce l'hanno e serve una variabile di
-sessione (`SET statement_timeout`, `SET SESSION max_execution_time`) impostata
-a ogni nuova connessione fisica. Verificato sui quattro motori con una query
+diverso: pymssql ha un vero timeout per chiamata passato in connessione,
+oracledb lo stesso concetto ma come proprieta' impostata sulla connessione
+subito dopo la connessione, PostgreSQL e MySQL non ce l'hanno e serve una
+variabile di sessione (`SET statement_timeout`, `SET SESSION
+max_execution_time`) impostata a ogni nuova connessione fisica. Verificato sui
+quattro motori con una query
 che dorme piu' del timeout consentito, incluso il caso che l'aveva scoperto:
 la connessione viene restituita al pool e poi riusata una seconda volta, e il
 limite deve continuare a valere.

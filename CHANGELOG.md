@@ -23,12 +23,15 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
   con un solo vincolo.
 - **Timeout di interrogazione** (60 secondi, oltre a quello di connessione
   gia' esistente): protegge da una query che si blocca *dopo* essersi
-  connessa, non solo durante la connessione. Un secondo per driver: pymssql e
-  oracledb hanno un vero timeout per chiamata, PostgreSQL e MySQL usano una
-  variabile di sessione impostata a ogni nuova connessione fisica.
-  Verificato sui quattro motori, incluso il caso che una prima versione
-  perdeva in silenzio: il timeout doveva reggere anche al secondo prestito
-  della stessa connessione dal pool, non solo al primo.
+  connessa, non solo durante la connessione. Un secondo per driver: pymssql ha
+  un vero timeout per chiamata passato in connessione, oracledb lo stesso
+  concetto come proprieta' impostata sulla connessione appena aperta,
+  PostgreSQL e MySQL usano una variabile di sessione impostata a ogni nuova
+  connessione fisica. Verificato sui quattro motori, incluso il caso che una
+  prima versione perdeva in silenzio: il timeout doveva reggere anche al
+  secondo prestito della stessa connessione dal pool, non solo al primo (e su
+  Oracle, il caso che passare `call_timeout` come argomento di connessione
+  invece che come proprieta' post-connessione rompeva la connessione stessa).
 
 ### Corretto
 
