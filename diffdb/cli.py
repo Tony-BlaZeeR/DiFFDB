@@ -4,6 +4,7 @@
     python -m diffdb.cli SVI COL --out ./report
     python -m diffdb.cli SVI COL --fail-on-diff        # esce con 1 se ci sono differenze
     python -m diffdb.cli SVI COL --dry-run             # solo le differenze, niente su disco
+    python -m diffdb.cli SVI COL --json                # le differenze in JSON su stdout
 
 Gli ambienti si indicano per nome (come in connections.json), passando
 direttamente due URL SQLAlchemy, oppure indicando uno snapshot salvato:
@@ -16,6 +17,7 @@ direttamente due URL SQLAlchemy, oppure indicando uno snapshot salvato:
 import argparse
 import dataclasses
 import getpass
+import json
 import logging
 import sys
 from pathlib import Path
@@ -76,6 +78,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Mostra le differenze ma non scrive niente su disco "
                              "(nessuno script, nessun Excel, nessuno snapshot, "
                              "nessuna regola accettata)")
+    parser.add_argument("--json", action="store_true",
+                        help="Le differenze in JSON su stdout, invece del "
+                             "riepilogo testuale (per una pipeline che le legge)")
     return parser
 
 
@@ -171,6 +176,28 @@ def imposta_password(nome: str, connections) -> int:
     return 0
 
 
+def stampa_json(diff, args, env1: str, env2: str) -> int:
+    """Le stesse differenze del riepilogo testuale, in JSON su stdout.
+
+    Chiavi in inglese e stabili (kind, name, change...), non le etichette
+    italiane usate per l'Excel: qui lo legge un programma, non una persona,
+    e le chiavi sono un contratto che non deve cambiare con la lingua
+    dell'interfaccia.
+    """
+    scritti = [] if (args.dry_run or diff.is_empty) else write_outputs(diff, args.out)
+
+    payload = {
+        "env1": env1,
+        "env2": env2,
+        "count": len(diff.all),
+        "already_accepted": diff.accettate,
+        "differences": [dataclasses.asdict(d) for d in diff.all],
+        "written": scritti,
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+    return 1 if (args.fail_on_diff and not diff.is_empty) else 0
+
+
 def verifica(percorso_script: str, token: str, schema, connections,
              regole=rules.NESSUNA) -> int:
     """Lo script e' ancora valido, o l'ambiente e' cambiato nel frattempo?
@@ -259,6 +286,9 @@ def main(argv=None) -> int:
 
     if args.accept:
         return accetta(diff, args, regole)
+
+    if args.json:
+        return stampa_json(diff, args, env1, env2)
 
     if diff.is_empty:
         print(f"Nessuna differenza fra {env1} e {env2}."

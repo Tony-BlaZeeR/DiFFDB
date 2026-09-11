@@ -382,6 +382,7 @@ python -m diffdb.cli --list                                  # connessioni confi
 python -m diffdb.cli SVI COL --out ./report                  # confronta e scrive gli output
 python -m diffdb.cli SVI COL --fail-on-diff                  # esce con 1 se divergono
 python -m diffdb.cli SVI COL --dry-run                       # solo le differenze, niente su disco
+python -m diffdb.cli SVI COL --json                          # le differenze in JSON su stdout
 python -m diffdb.cli sqlite:///a.db sqlite:///b.db           # anche due URL al volo
 ```
 
@@ -389,7 +390,12 @@ python -m diffdb.cli sqlite:///a.db sqlite:///b.db           # anche due URL al 
 produzione hanno smesso di somigliarsi. `--dry-run` mostra le stesse
 differenze ma non tocca il filesystem — niente script, niente Excel, niente
 snapshot, nessuna regola accettata — utile per vedere cosa farebbe un comando
-prima di lasciarglielo fare davvero.
+prima di lasciarglielo fare davvero. `--json` sostituisce il riepilogo
+testuale con un oggetto JSON su stdout (`env1`, `env2`, `count`,
+`already_accepted`, `differences`, `written`) — chiavi stabili in inglese,
+pensate per un altro programma che le legge, non per essere lette a occhio.
+Si combina con `--dry-run` (`written` resta vuoto) e `--fail-on-diff` (il
+codice di uscita non cambia).
 
 ## Build (eseguibile portable)
 
