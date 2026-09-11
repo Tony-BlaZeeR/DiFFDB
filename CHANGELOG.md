@@ -36,6 +36,9 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
   disco — nessuno script, nessun Excel, nessuno snapshot, nessuna regola
   accettata. Utile per vedere cosa farebbe un comando prima di lasciarlo
   toccare il filesystem, specialmente in pipeline.
+- **`--json`**: le differenze in un oggetto JSON su stdout invece del
+  riepilogo testuale, con chiavi stabili in inglese pensate per essere lette
+  da un altro programma. Si combina con `--dry-run` e `--fail-on-diff`.
 
 ### Corretto
 
