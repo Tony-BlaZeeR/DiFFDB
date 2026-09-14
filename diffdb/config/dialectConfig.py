@@ -54,6 +54,10 @@ query_templates = {
         "sequences": True,
         "alter_sequence": "ALTER SEQUENCE {name} INCREMENT BY {increment} RESTART WITH {start};",
         "create_synonym": None,  # PostgreSQL non ha i sinonimi
+        "routines": True,
+        # Una funzione puo' essere sovraccaricata: il DROP indica quale firma.
+        "drop_procedure": "DROP PROCEDURE {name}({args});",
+        "drop_function": "DROP FUNCTION {name}({args});",
     },
     "mysql": {
         "drop_check": "ALTER TABLE {table} DROP CHECK {name};",
@@ -80,6 +84,9 @@ query_templates = {
         "sequences": False,  # MySQL non ha le sequenze classiche
         "alter_sequence": None,
         "create_synonym": None,
+        "routines": True,
+        "drop_procedure": "DROP PROCEDURE {name};",
+        "drop_function": "DROP FUNCTION {name};",
     },
     "oracle": {
         "drop_check": None,   # usa drop_constraint
@@ -107,6 +114,9 @@ query_templates = {
         "sequences": True,
         "alter_sequence": "ALTER SEQUENCE {name} INCREMENT BY {increment};",
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
+        "routines": True,
+        "drop_procedure": "DROP PROCEDURE {name};",
+        "drop_function": "DROP FUNCTION {name};",
     },
     "mssql": {
         "drop_check": None,   # usa drop_constraint
@@ -135,6 +145,9 @@ query_templates = {
         "sequences": True,
         "alter_sequence": "ALTER SEQUENCE {name} RESTART WITH {start} INCREMENT BY {increment};",
         "create_synonym": "CREATE SYNONYM {name} FOR {target};",
+        "routines": True,
+        "drop_procedure": "DROP PROCEDURE {name};",
+        "drop_function": "DROP FUNCTION {name};",
     },
     "sqlite": {
         "drop_check": None,
@@ -161,6 +174,9 @@ query_templates = {
         "sequences": False,
         "alter_sequence": None,
         "create_synonym": None,
+        "routines": False,  # SQLite non ha stored procedure ne' funzioni SQL
+        "drop_procedure": None,
+        "drop_function": None,
     },
 }
 

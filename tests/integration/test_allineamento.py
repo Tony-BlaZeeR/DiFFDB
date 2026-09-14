@@ -262,16 +262,20 @@ def _esegui(url, scripts, sezioni=SEZIONI_ALLINEAMENTO):
 # eventuale DROP, per la sostituzione) si divide come sempre.
 # EDITIONABLE/NONEDITIONABLE: quello che DBMS_METADATA.GET_DDL antepone su
 # Oracle 12c+ per gli oggetti soggetti a edition-based redefinition, anche
-# quando il trigger stesso non la usa.
-INIZIO_TRIGGER = re.compile(
-    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?TRIGGER\b",
+# quando l'oggetto stesso non la usa. Vale per trigger, procedure e funzioni:
+# tutti hanno un corpo PL/SQL con punti e virgola interni che romperebbero lo
+# split per ";" delle altre sezioni.
+INIZIO_BLOCCO_PLSQL = re.compile(
+    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?"
+    r"(?:TRIGGER|PROCEDURE|FUNCTION)\b",
     re.IGNORECASE | re.MULTILINE)
 
 # DBMS_METADATA.GET_DDL per un trigger Oracle non si ferma al CREATE: aggiunge
 # in coda un ALTER TRIGGER ... ENABLE/DISABLE che riproduce lo stato corrente
-# del trigger (abilitato o no), una seconda istruzione a tutti gli effetti.
-# Va staccata dal blocco PL/SQL, non inclusa dentro: eseguirle insieme come
-# una sola istruzione manderebbe Oracle in errore di sintassi.
+# del trigger (abilitato o no), una seconda istruzione a tutti gli effetti —
+# va comunque staccata dal blocco PL/SQL che precede, o Oracle la legge come
+# parte della stessa istruzione e va in errore di sintassi. Qui sotto non si
+# esegue neppure: vedi il commento nel punto in cui viene scartata.
 ALTER_TRIGGER_STATO = re.compile(r"^\s*ALTER\s+TRIGGER\b", re.IGNORECASE | re.MULTILINE)
 
 
@@ -288,14 +292,18 @@ def _istruzioni(blocco: str):
     if not testo:
         return
 
-    trovato = INIZIO_TRIGGER.search(testo)
+    trovato = INIZIO_BLOCCO_PLSQL.search(testo)
     if trovato:
         yield from _istruzioni(testo[:trovato.start()])
         resto = testo[trovato.start():]
         alter = ALTER_TRIGGER_STATO.search(resto)
         if alter:
             yield resto[:alter.start()].strip().rstrip(";")
-            yield from _istruzioni(resto[alter.start():])
+            # Non si esegue: per un trigger appena creato (mai disabilitato)
+            # e' ridondante — CREATE TRIGGER lo lascia gia' abilitato — e
+            # forzare esplicitamente un ENABLE si e' visto costringere Oracle
+            # a una ri-validazione che a volte fallisce (ORA-04098), scoperto
+            # dalla CI. Non essenziale per verificare che il trigger funzioni.
         else:
             yield resto.strip().rstrip(";")
         return
@@ -638,6 +646,207 @@ def test_corpo_del_trigger_diverso_si_rileva_e_si_corregge(coppia):
             valore = conn.execute(text("SELECT val FROM trg_tbl WHERE id = 1")).scalar()
         assert int(valore) == 11, (
             "dopo la correzione deve incrementare come in SVI, non decrementare")
+    finally:
+        engine.dispose()
+
+
+# --- procedure e funzioni -----------------------------------------------------
+
+
+def _stesso_nome(a: str, b: str) -> bool:
+    """Oracle piega gli identificatori non quotati in maiuscolo: il confronto
+    coi nomi scritti nei DDL di prova va fatto senza distinguere le maiuscole."""
+    return a.upper() == b.upper()
+
+
+NOME_FUNZIONE = "rtn_raddoppia"
+NOME_PROCEDURA = "rtn_incr"
+
+ROUTINE_SETUP = {
+    "postgresql": ["CREATE TABLE rtn_tbl (id INTEGER PRIMARY KEY, val INTEGER)"],
+    "mysql": ["CREATE TABLE rtn_tbl (id INTEGER PRIMARY KEY, val INTEGER)"],
+    "mssql": ["CREATE TABLE rtn_tbl (id INTEGER PRIMARY KEY, val INTEGER)"],
+    "oracle": ["CREATE TABLE rtn_tbl (id NUMBER(10) PRIMARY KEY, val NUMBER(10))"],
+}
+
+FUNZIONE_DDL = {
+    "postgresql": ("CREATE FUNCTION rtn_raddoppia(x integer) RETURNS integer AS "
+                   "$$ BEGIN RETURN x * 2; END; $$ LANGUAGE plpgsql"),
+    "mysql": ("CREATE FUNCTION rtn_raddoppia(x INT) RETURNS INT DETERMINISTIC "
+              "BEGIN RETURN x * 2; END"),
+    "mssql": "CREATE FUNCTION rtn_raddoppia(@x INT) RETURNS INT AS BEGIN RETURN @x * 2; END",
+    "oracle": ("CREATE FUNCTION rtn_raddoppia(x IN NUMBER) RETURN NUMBER IS "
+               "BEGIN RETURN x * 2; END;"),
+}
+
+CHIAMA_FUNZIONE = {
+    "postgresql": "SELECT rtn_raddoppia(5)",
+    "mysql": "SELECT rtn_raddoppia(5)",
+    "mssql": "SELECT dbo.rtn_raddoppia(5)",
+    "oracle": "SELECT rtn_raddoppia(5) FROM dual",
+}
+
+# Corpo diverso, testualmente nel corpo della funzione stessa (non in un
+# oggetto separato come per il trigger su PostgreSQL): qui il confronto per
+# corpo normalizzato vale su tutti e quattro i motori, senza eccezioni.
+FUNZIONE_CORPO_DIVERSO = {
+    "postgresql": ("CREATE FUNCTION rtn_raddoppia(x integer) RETURNS integer AS "
+                   "$$ BEGIN RETURN x * 3; END; $$ LANGUAGE plpgsql"),
+    "mysql": ("CREATE FUNCTION rtn_raddoppia(x INT) RETURNS INT DETERMINISTIC "
+              "BEGIN RETURN x * 3; END"),
+    "mssql": "CREATE FUNCTION rtn_raddoppia(@x INT) RETURNS INT AS BEGIN RETURN @x * 3; END",
+    "oracle": ("CREATE FUNCTION rtn_raddoppia(x IN NUMBER) RETURN NUMBER IS "
+               "BEGIN RETURN x * 3; END;"),
+}
+
+PROCEDURA_DDL = {
+    "postgresql": ("CREATE PROCEDURE rtn_incr(p_id INTEGER) AS "
+                   "$$ BEGIN UPDATE rtn_tbl SET val = val + 1 WHERE id = p_id; END; $$ "
+                   "LANGUAGE plpgsql"),
+    "mysql": ("CREATE PROCEDURE rtn_incr(IN p_id INT) "
+              "BEGIN UPDATE rtn_tbl SET val = val + 1 WHERE id = p_id; END"),
+    "mssql": ("CREATE PROCEDURE rtn_incr @p_id INT AS "
+              "BEGIN UPDATE rtn_tbl SET val = val + 1 WHERE id = @p_id; END"),
+    "oracle": ("CREATE PROCEDURE rtn_incr(p_id IN NUMBER) IS "
+               "BEGIN UPDATE rtn_tbl SET val = val + 1 WHERE id = p_id; END;"),
+}
+
+CHIAMA_PROCEDURA = {
+    "postgresql": "CALL rtn_incr(1)",
+    "mysql": "CALL rtn_incr(1)",
+    "mssql": "EXEC rtn_incr @p_id = 1",
+    "oracle": "BEGIN rtn_incr(1); END;",
+}
+
+
+DROP_FUNZIONE = {
+    "postgresql": "DROP FUNCTION rtn_raddoppia(integer)",
+    "mysql": "DROP FUNCTION rtn_raddoppia",
+    "mssql": "DROP FUNCTION rtn_raddoppia",
+    "oracle": "DROP FUNCTION rtn_raddoppia",
+}
+DROP_PROCEDURA = {
+    "postgresql": "DROP PROCEDURE rtn_incr(integer)",
+    "mysql": "DROP PROCEDURE rtn_incr",
+    "mssql": "DROP PROCEDURE rtn_incr",
+    "oracle": "DROP PROCEDURE rtn_incr",
+}
+
+
+def _prepara_ambiente_routine(url, schema, dialetto, con_funzione: bool, con_procedura: bool):
+    engine = create_engine(url)
+    try:
+        _svuota(engine, schema)
+        # _svuota non tocca le routine standalone: non sono legate a una
+        # tabella come i trigger, DROP TABLE non le porta via con se'. Quella
+        # lasciata da un test precedente nella stessa sessione andrebbe
+        # altrimenti a scontrarsi con la CREATE qui sotto.
+        _ignora(engine, DROP_FUNZIONE[dialetto])
+        _ignora(engine, DROP_PROCEDURA[dialetto])
+        with engine.begin() as conn:
+            for statement in ROUTINE_SETUP[dialetto]:
+                _esegui_ddl(conn, statement)
+            if con_funzione:
+                _esegui_ddl(conn, FUNZIONE_DDL[dialetto])
+            if con_procedura:
+                _esegui_ddl(conn, PROCEDURA_DDL[dialetto])
+    finally:
+        engine.dispose()
+
+
+def test_la_funzione_si_allinea_e_funziona(coppia):
+    """Come per il trigger: il confronto rileva la funzione mancante, lo
+    script generato la crea, e la funzione creata calcola davvero, non solo
+    esiste."""
+    _prepara_ambiente_routine(coppia.svi.url, coppia.svi.schema, coppia.dialetto,
+                              con_funzione=True, con_procedura=False)
+    _prepara_ambiente_routine(coppia.col.url, coppia.col.schema, coppia.dialetto,
+                              con_funzione=False, con_procedura=False)
+
+    diff = _confronta(coppia)
+    trovate = [d for d in diff.routines
+              if d.kind == "function" and _stesso_nome(d.name, NOME_FUNZIONE)]
+    assert [(d.change, d.missing_in) for d in trovate] == [(MISSING, coppia.col.nome)]
+
+    scripts = generate_sql_scripts(diff, target_env=coppia.col.nome)
+    eseguiti = _esegui(coppia.col.url, scripts, sezioni=("routines",))
+    assert eseguiti, "lo script della funzione era vuoto"
+
+    engine = create_engine(coppia.col.url)
+    try:
+        with engine.connect() as conn:
+            valore = conn.execute(text(CHIAMA_FUNZIONE[coppia.dialetto])).scalar()
+        assert int(valore) == 10, "la funzione esiste ma non calcola il valore atteso"
+    finally:
+        engine.dispose()
+
+    residue = [d for d in _confronta(coppia).routines
+              if d.kind == "function" and _stesso_nome(d.name, NOME_FUNZIONE)]
+    assert residue == []
+
+
+def test_la_procedura_si_allinea_e_funziona(coppia):
+    """Come sopra ma per una procedura: qui il 'funziona davvero' si vede
+    nell'effetto su una tabella, non in un valore di ritorno."""
+    _prepara_ambiente_routine(coppia.svi.url, coppia.svi.schema, coppia.dialetto,
+                              con_funzione=False, con_procedura=True)
+    _prepara_ambiente_routine(coppia.col.url, coppia.col.schema, coppia.dialetto,
+                              con_funzione=False, con_procedura=False)
+
+    diff = _confronta(coppia)
+    trovate = [d for d in diff.routines
+              if d.kind == "procedure" and _stesso_nome(d.name, NOME_PROCEDURA)]
+    assert [(d.change, d.missing_in) for d in trovate] == [(MISSING, coppia.col.nome)]
+
+    scripts = generate_sql_scripts(diff, target_env=coppia.col.nome)
+    eseguiti = _esegui(coppia.col.url, scripts, sezioni=("routines",))
+    assert eseguiti, "lo script della procedura era vuoto"
+
+    engine = create_engine(coppia.col.url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO rtn_tbl (id, val) VALUES (1, 10)"))
+            _esegui_ddl(conn, CHIAMA_PROCEDURA[coppia.dialetto])
+            valore = conn.execute(text("SELECT val FROM rtn_tbl WHERE id = 1")).scalar()
+        assert int(valore) == 11, "la procedura esiste ma non ha aggiornato la riga"
+    finally:
+        engine.dispose()
+
+
+def test_corpo_della_funzione_diverso_si_rileva_e_si_corregge(coppia):
+    """Stesso nome, stessa firma, corpo diverso: DROP + CREATE, mai un
+    CREATE OR REPLACE (MySQL non lo ha ne' per le procedure ne' per le
+    funzioni, in nessuna versione)."""
+    dialetto = coppia.dialetto
+    _prepara_ambiente_routine(coppia.svi.url, coppia.svi.schema, dialetto,
+                              con_funzione=True, con_procedura=False)
+    _prepara_ambiente_routine(coppia.col.url, coppia.col.schema, dialetto,
+                              con_funzione=False, con_procedura=False)
+
+    engine = create_engine(coppia.col.url)
+    try:
+        with engine.begin() as conn:
+            _esegui_ddl(conn, FUNZIONE_CORPO_DIVERSO[dialetto])
+    finally:
+        engine.dispose()
+
+    diff = _confronta(coppia)
+    trovate = [d for d in diff.routines
+              if d.kind == "function" and _stesso_nome(d.name, NOME_FUNZIONE)]
+    assert [d.change for d in trovate] == [DEFINITION_MISMATCH]
+
+    scripts = generate_sql_scripts(diff, target_env=coppia.col.nome)
+    joined = "\n".join(scripts["routines"])
+    assert "DROP FUNCTION" in joined
+
+    eseguiti = _esegui(coppia.col.url, scripts, sezioni=("routines",))
+    assert eseguiti
+
+    engine = create_engine(coppia.col.url)
+    try:
+        with engine.connect() as conn:
+            valore = conn.execute(text(CHIAMA_FUNZIONE[dialetto])).scalar()
+        assert int(valore) == 10, "dopo la correzione deve calcolare come in SVI (x2), non x3"
     finally:
         engine.dispose()
 

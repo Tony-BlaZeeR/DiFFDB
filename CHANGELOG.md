@@ -48,6 +48,13 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
   Limite noto: su PostgreSQL e Oracle il corpo che conta e' spesso nella
   funzione/procedura richiamata, non nel testo del trigger — confrontare
   anche quelle e' un lavoro a parte, non ancora fatto.
+- **Stored procedure e funzioni** nel confronto: stesso principio dei
+  trigger, stesso DROP + CREATE sempre. Solo le routine standalone, non i
+  membri di un package Oracle. Su PostgreSQL una funzione puo' essere
+  sovraccaricata: il DROP indica anche gli argomenti
+  (`pg_get_function_identity_arguments`), non solo il nome. Chiude (in parte)
+  il limite dei trigger appena sopra: la funzione richiamata da un trigger
+  ora si confronta anche lei, non solo il legame col trigger.
 
 ### Corretto
 

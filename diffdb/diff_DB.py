@@ -24,6 +24,7 @@ from diffdb.schema_snapshot import (
     fk_signature,
     index_signature,
     normalize_sql,
+    routine_key,
     snapshot_connection,
     take_snapshot,  # noqa: F401
     type_signature,
@@ -72,13 +73,14 @@ class DiffResult:
     sequences: list[Difference] = field(default_factory=list)
     synonyms: list[Difference] = field(default_factory=list)
     triggers: list[Difference] = field(default_factory=list)
+    routines: list[Difference] = field(default_factory=list)
     regole: Regole = field(default_factory=Regole)
     accettate: int = 0        # differenze nascoste perche' gia' accettate
 
     @property
     def all(self) -> list[Difference]:
         return (self.tables + self.constraints + self.views + self.sequences
-                + self.synonyms + self.triggers)
+                + self.synonyms + self.triggers + self.routines)
 
     @property
     def is_empty(self) -> bool:
@@ -94,6 +96,7 @@ class DiffResult:
             "sequences": self.sequences,
             "synonyms": self.synonyms,
             "triggers": self.triggers,
+            "routines": self.routines,
         }
 
     def subset(self, keep) -> "DiffResult":
@@ -114,6 +117,7 @@ class DiffResult:
             sequences=[d for d in self.sequences if id(d) in ids],
             synonyms=[d for d in self.synonyms if id(d) in ids],
             triggers=[d for d in self.triggers if id(d) in ids],
+            routines=[d for d in self.routines if id(d) in ids],
         )
 
     def snapshot_of(self, env_name: str) -> Snapshot:
@@ -174,6 +178,7 @@ def compare_snapshots(snap1: Snapshot, snap2: Snapshot,
     result.sequences = _compare_sequences(snap1, snap2)
     result.synonyms = _compare_synonyms(snap1, snap2)
     result.triggers = _compare_triggers(snap1, snap2)
+    result.routines = _compare_routines(snap1, snap2)
     return _applica_regole(result, regole)
 
 
@@ -186,7 +191,8 @@ def _applica_regole(result: DiffResult, regole: Regole) -> DiffResult:
     if regole.vuote:
         return result
 
-    for categoria in ("tables", "constraints", "views", "sequences", "synonyms", "triggers"):
+    for categoria in ("tables", "constraints", "views", "sequences", "synonyms",
+                     "triggers", "routines"):
         differenze = getattr(result, categoria)
         if not regole.categoria_inclusa(categoria):
             setattr(result, categoria, [])
@@ -318,6 +324,30 @@ def _compare_triggers(snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
     return diffs
 
 
+def _compare_routines(snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
+    """Come i trigger, ma la chiave e' kind+nome: MySQL ammette una procedura
+    e una funzione con lo stesso nome nello stesso schema."""
+    e1, e2 = snap1.env_name, snap2.env_name
+    chiavi1, chiavi2 = set(snap1.routines), set(snap2.routines)
+    diffs = []
+
+    for chiave in sorted(chiavi2 - chiavi1):
+        spec = snap2.routines[chiave]
+        diffs.append(Difference(spec.kind, spec.name, MISSING, missing_in=e1, present_in=e2))
+    for chiave in sorted(chiavi1 - chiavi2):
+        spec = snap1.routines[chiave]
+        diffs.append(Difference(spec.kind, spec.name, MISSING, missing_in=e2, present_in=e1))
+
+    for chiave in sorted(chiavi1 & chiavi2):
+        spec1, spec2 = snap1.routines[chiave], snap2.routines[chiave]
+        if normalize_sql(spec1.definition) != normalize_sql(spec2.definition):
+            etichetta = "procedura" if spec1.kind == "procedure" else "funzione"
+            diffs.append(Difference(
+                spec1.kind, spec1.name, DEFINITION_MISMATCH,
+                detail=f"il corpo della {etichetta} e' diverso nei due ambienti"))
+    return diffs
+
+
 def _compare_names(kind, names1, names2, env1, env2) -> list[Difference]:
     diffs = []
     for name in sorted(set(names2) - set(names1)):
@@ -372,7 +402,7 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
         return f"{quote(target.schema)}.{quote(name)}" if target.schema else quote(name)
 
     scripts = {"tables": [], "constraints": [], "views": [], "sequences": [],
-               "synonyms": [], "triggers": []}
+               "synonyms": [], "triggers": [], "routines": []}
 
     # Le tabelle nuove vanno create prima di quelle che le referenziano: le
     # foreign key sono dentro il CREATE TABLE, e in ordine alfabetico uno script
@@ -492,6 +522,26 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
         else:
             scripts["triggers"].append(_trigger_create_ddl(spec))
 
+    for d in diff.routines:
+        if d.missing_in != target_env and d.change != DEFINITION_MISMATCH:
+            continue
+        if not templates["routines"]:
+            etichetta = "la procedura" if d.kind == "procedure" else "la funzione"
+            scripts["routines"].append(
+                f"-- {target.dialect} non supporta le stored procedure/funzioni: "
+                f"{etichetta} {d.name} non e' replicabile")
+            continue
+        spec = source.routines.get(routine_key(d.kind, d.name))
+        if spec is None or not spec.definition.strip():
+            etichetta = "della procedura" if d.kind == "procedure" else "della funzione"
+            scripts["routines"].append(
+                f"-- Definizione {etichetta} {d.name} non leggibile da "
+                f"{source.env_name}: va copiata a mano")
+        elif d.change == DEFINITION_MISMATCH:
+            scripts["routines"].append(_routine_replace_ddl(spec, templates, qualify))
+        else:
+            scripts["routines"].append(_routine_create_ddl(spec))
+
     return scripts
 
 
@@ -521,7 +571,7 @@ def generate_rollback_scripts(diff: DiffResult, target_env: str) -> dict[str, li
         return f"{quote(target.schema)}.{quote(name)}" if target.schema else quote(name)
 
     scripts = {"tables": [], "constraints": [], "views": [], "sequences": [],
-               "synonyms": [], "triggers": []}
+               "synonyms": [], "triggers": [], "routines": []}
 
     # Prima i vincoli e gli indici, poi le tabelle: l'ordine inverso
     # dell'andata, o si prova a togliere una tabella che qualcuno referenzia.
@@ -584,6 +634,23 @@ def generate_rollback_scripts(diff: DiffResult, target_env: str) -> dict[str, li
                 _trigger_replace_ddl(spec, templates, qualify)
                 if spec and spec.definition.strip()
                 else f"-- Il trigger {d.name} e' stato riscritto: il corpo precedente non "
+                     f"e' leggibile da qui, va ripreso a mano.")
+
+    for d in diff.routines:
+        chiave_template = "drop_procedure" if d.kind == "procedure" else "drop_function"
+        if d.missing_in == target_env and templates[chiave_template]:
+            # La routine l'ha aggiunta l'allineamento: sta ancora solo nella
+            # sorgente, il target non l'aveva prima di eseguirlo.
+            spec = source.routines.get(routine_key(d.kind, d.name))
+            scripts["routines"].append(templates[chiave_template].format(
+                name=qualify(d.name), args=spec.drop_args if spec else ""))
+        elif d.change == DEFINITION_MISMATCH:
+            spec = target.routines.get(routine_key(d.kind, d.name))
+            etichetta = "La procedura" if d.kind == "procedure" else "La funzione"
+            scripts["routines"].append(
+                _routine_replace_ddl(spec, templates, qualify)
+                if spec and spec.definition.strip()
+                else f"-- {etichetta} {d.name} e' stata riscritta: il corpo precedente non "
                      f"e' leggibile da qui, va ripreso a mano.")
 
     return {sezione: [i for i in istruzioni if i] for sezione, istruzioni in scripts.items()}
@@ -833,6 +900,21 @@ def _trigger_replace_ddl(spec, templates: dict, qualify) -> str:
     drop = templates["drop_trigger"].format(
         name=qualify(spec.name), table=qualify(spec.table) if spec.table else "?")
     return f"{drop}\n{_trigger_create_ddl(spec)}"
+
+
+def _routine_create_ddl(spec) -> str:
+    """Come per i trigger: la definizione catturata e' gia' un CREATE completo
+    ed eseguibile (pg_get_functiondef, DBMS_METADATA.GET_DDL, sys.sql_modules,
+    SHOW CREATE PROCEDURE/FUNCTION)."""
+    return spec.definition.strip().rstrip(";") + ";"
+
+
+def _routine_replace_ddl(spec, templates: dict, qualify) -> str:
+    """Sempre DROP + CREATE, mai un tentativo di CREATE OR REPLACE: MySQL non
+    lo ha ne' per le procedure ne' per le funzioni, in nessuna versione."""
+    chiave_template = "drop_procedure" if spec.kind == "procedure" else "drop_function"
+    drop = templates[chiave_template].format(name=qualify(spec.name), args=spec.drop_args or "")
+    return f"{drop}\n{_routine_create_ddl(spec)}"
 
 
 def _default_ddl(d: Difference, source: Snapshot, target: Snapshot, templates: dict,
