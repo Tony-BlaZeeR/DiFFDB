@@ -764,17 +764,22 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
         <translation>Trigger</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="324"/>
+        <location filename="../results_tab.py" line="233"/>
+        <source>Procedure e funzioni</source>
+        <translation>Procedures and functions</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="325"/>
         <source>Niente da esportare</source>
         <translation>Nothing to export</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="325"/>
+        <location filename="../results_tab.py" line="326"/>
         <source>Spunta almeno una differenza.</source>
         <translation>Tick at least one difference.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="342"/>
+        <location filename="../results_tab.py" line="343"/>
         <source>Esporta SQL ({0} selezionati)</source>
         <translation>Export SQL ({0} selected)</translation>
     </message>
