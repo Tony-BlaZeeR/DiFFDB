@@ -550,6 +550,8 @@ def _fetch_triggers(engine: Engine, schema: str | None) -> dict[str, TriggerSpec
 
     try:
         with engine.connect() as conn:
+            if dialetto == "oracle":
+                _disattiva_schema_in_ddl(conn)
             params = {"schema": schema} if ":schema" in query else {}
             righe = conn.execute(text(query), params).fetchall()
     except SQLAlchemyError as exc:
@@ -560,6 +562,19 @@ def _fetch_triggers(engine: Engine, schema: str | None) -> dict[str, TriggerSpec
         nome: TriggerSpec(name=nome, table=tabella, definition=_leggi_clob(definizione))
         for nome, tabella, definizione in righe
     }
+
+
+def _disattiva_schema_in_ddl(conn) -> None:
+    """DBMS_METADATA.GET_DDL per default qualifica ogni nome con lo schema di
+    provenienza: comodo per un dump a se stante, sbagliato qui, dove il DDL
+    catturato deve poter essere eseguito su un ambiente con un nome di schema
+    diverso — che e' proprio il motivo per cui lo si sta confrontando. Vale
+    per la sessione corrente: va rifatto a ogni nuova connessione, non e' una
+    preferenza salvata sull'account. Non verificabile in locale (nessuna
+    istanza Oracle): comportamento documentato di DBMS_METADATA, non assunto."""
+    conn.exec_driver_sql(
+        "BEGIN DBMS_METADATA.SET_TRANSFORM_PARAM("
+        "DBMS_METADATA.SESSION_TRANSFORM, 'EMIT_SCHEMA', FALSE); END;")
 
 
 def _fetch_mysql_triggers(engine: Engine, schema: str | None) -> dict[str, TriggerSpec]:

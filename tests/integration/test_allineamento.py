@@ -10,6 +10,7 @@ Ogni dialetto viene saltato se la sua variabile d'ambiente non e' impostata
 (vedi conftest.py), quindi la suite si puo' lanciare anche su un dialetto solo.
 """
 
+import re
 import time
 
 import pytest
@@ -217,7 +218,7 @@ def _connessione(ambiente):
 # Disfare vuol dire percorrere all'indietro: prima cio' che dipende, poi le
 # tabelle.
 SEZIONI_ALLINEAMENTO = ("sequences", "tables", "constraints", "views", "synonyms", "triggers")
-SEZIONI_ANNULLAMENTO = ("synonyms", "views", "constraints", "tables", "sequences")
+SEZIONI_ANNULLAMENTO = ("triggers", "synonyms", "views", "constraints", "tables", "sequences")
 
 
 def _esegui(url, scripts, sezioni=SEZIONI_ALLINEAMENTO):
@@ -229,11 +230,30 @@ def _esegui(url, scripts, sezioni=SEZIONI_ALLINEAMENTO):
             for blocco in scripts.get(sezione, []):
                 for statement in _istruzioni(blocco):
                     with engine.begin() as conn:
-                        conn.execute(text(statement))
+                        # exec_driver_sql, non execute(text(...)): un trigger
+                        # Oracle contiene ":NEW"/":OLD", e text() li leggerebbe
+                        # come parametri bind invece che come sintassi PL/SQL
+                        # letterale, fallendo con "a value is required for
+                        # bind parameter 'NEW'". exec_driver_sql manda la
+                        # stringa al driver cosi' com'e', senza interpretarla.
+                        conn.exec_driver_sql(statement)
                     eseguiti.append(statement)
     finally:
         engine.dispose()
     return eseguiti
+
+
+# Un CREATE TRIGGER con un corpo PL/SQL (Oracle: BEGIN ... END;) ha punti e
+# virgola *dentro* l'istruzione: dividerlo come le altre sezioni lo
+# spezzerebbe in frammenti invalidi. Dal punto in cui inizia va trattato come
+# un'unica istruzione fino alla fine del blocco; quello che lo precede (un
+# eventuale DROP, per la sostituzione) si divide come sempre.
+# EDITIONABLE/NONEDITIONABLE: quello che DBMS_METADATA.GET_DDL antepone su
+# Oracle 12c+ per gli oggetti soggetti a edition-based redefinition, anche
+# quando il trigger stesso non la usa.
+INIZIO_TRIGGER = re.compile(
+    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?TRIGGER\b",
+    re.IGNORECASE | re.MULTILINE)
 
 
 def _istruzioni(blocco: str):
@@ -244,9 +264,19 @@ def _istruzioni(blocco: str):
     SQL rischioso, e quelli non si eseguono. Il punto e virgola finale va tolto:
     Oracle non lo accetta quando l'istruzione arriva dal driver.
     """
-    for pezzo in blocco.split(";"):
-        righe = [r for r in pezzo.splitlines() if not r.strip().startswith("--")]
-        istruzione = "\n".join(righe).strip()
+    righe = [r for r in blocco.splitlines() if not r.strip().startswith("--")]
+    testo = "\n".join(righe).strip()
+    if not testo:
+        return
+
+    trovato = INIZIO_TRIGGER.search(testo)
+    if trovato:
+        yield from _istruzioni(testo[:trovato.start()])
+        yield testo[trovato.start():].strip().rstrip(";")
+        return
+
+    for pezzo in testo.split(";"):
+        istruzione = pezzo.strip()
         if istruzione:
             yield istruzione
 
@@ -479,9 +509,13 @@ def _prepara_ambiente_trigger(url, schema, dialetto, con_trigger: bool):
         _svuota(engine, schema)
         with engine.begin() as conn:
             for statement in TRIGGER_SETUP[dialetto]:
-                conn.execute(text(statement))
+                # exec_driver_sql, non execute(text(...)): un corpo PL/SQL
+                # Oracle contiene ":NEW"/":OLD", che text() leggerebbe come
+                # parametri bind invece che come sintassi letterale (vedi
+                # _esegui piu' sopra per lo stesso problema sullo script generato).
+                conn.exec_driver_sql(statement)
             if con_trigger:
-                conn.execute(text(TRIGGER_DDL[dialetto]))
+                conn.exec_driver_sql(TRIGGER_DDL[dialetto])
     finally:
         engine.dispose()
 
@@ -544,7 +578,7 @@ def test_corpo_del_trigger_diverso_si_rileva_e_si_corregge(coppia):
     engine = create_engine(coppia.col.url)
     try:
         with engine.begin() as conn:
-            conn.execute(text(TRIGGER_CORPO_DIVERSO[dialetto]))
+            conn.exec_driver_sql(TRIGGER_CORPO_DIVERSO[dialetto])
     finally:
         engine.dispose()
 
