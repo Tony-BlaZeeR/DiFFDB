@@ -267,6 +267,13 @@ INIZIO_TRIGGER = re.compile(
     r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?TRIGGER\b",
     re.IGNORECASE | re.MULTILINE)
 
+# DBMS_METADATA.GET_DDL per un trigger Oracle non si ferma al CREATE: aggiunge
+# in coda un ALTER TRIGGER ... ENABLE/DISABLE che riproduce lo stato corrente
+# del trigger (abilitato o no), una seconda istruzione a tutti gli effetti.
+# Va staccata dal blocco PL/SQL, non inclusa dentro: eseguirle insieme come
+# una sola istruzione manderebbe Oracle in errore di sintassi.
+ALTER_TRIGGER_STATO = re.compile(r"^\s*ALTER\s+TRIGGER\b", re.IGNORECASE | re.MULTILINE)
+
 
 def _istruzioni(blocco: str):
     """Le istruzioni eseguibili di un blocco.
@@ -284,7 +291,13 @@ def _istruzioni(blocco: str):
     trovato = INIZIO_TRIGGER.search(testo)
     if trovato:
         yield from _istruzioni(testo[:trovato.start()])
-        yield testo[trovato.start():].strip().rstrip(";")
+        resto = testo[trovato.start():]
+        alter = ALTER_TRIGGER_STATO.search(resto)
+        if alter:
+            yield resto[:alter.start()].strip().rstrip(";")
+            yield from _istruzioni(resto[alter.start():])
+        else:
+            yield resto.strip().rstrip(";")
         return
 
     for pezzo in testo.split(";"):
@@ -492,6 +505,16 @@ def test_la_variabile_di_timeout_regge_al_secondo_prestito(coppia):
 # funzione": la funzione deve preesistere nel target perche' lo script generato
 # funzioni, esattamente come un CREATE VIEW richiede che le tabelle che
 # referenzia esistano gia'.
+# Oracle piega gli identificatori non quotati in maiuscolo: il nome che il
+# catalogo restituisce e' "TRG_TBL_TRG", non quello scritto nel CREATE. Il
+# confronto va fatto senza distinguere maiuscole/minuscole.
+NOME_TRIGGER = "trg_tbl_trg"
+
+
+def _e_trigger_di_prova(nome: str) -> bool:
+    return nome.upper() == NOME_TRIGGER.upper()
+
+
 TRIGGER_SETUP = {
     "postgresql": [
         "CREATE TABLE trg_tbl (id INTEGER PRIMARY KEY, val INTEGER)",
@@ -539,12 +562,12 @@ def test_il_trigger_si_allinea_e_funziona(coppia):
     # Diagnostica prima del confronto: se questo fallisce, il problema e' nella
     # creazione o nella query di lettura, non nella logica di confronto.
     svi_snapshot = snapshot_connection(coppia.svi.nome, coppia.svi.url, coppia.svi.schema)
-    assert "trg_tbl_trg" in svi_snapshot.triggers, (
+    assert any(_e_trigger_di_prova(nome) for nome in svi_snapshot.triggers), (
         f"[{coppia.dialetto}] il trigger appena creato in SVI non si legge dal "
         f"catalogo: trovati {list(svi_snapshot.triggers)}")
 
     diff = _confronta(coppia)
-    trovati = [d for d in diff.triggers if d.name == "trg_tbl_trg"]
+    trovati = [d for d in diff.triggers if _e_trigger_di_prova(d.name)]
     assert [(d.change, d.missing_in) for d in trovati] == [(MISSING, coppia.col.nome)]
 
     scripts = generate_sql_scripts(diff, target_env=coppia.col.nome)
@@ -560,7 +583,7 @@ def test_il_trigger_si_allinea_e_funziona(coppia):
     finally:
         engine.dispose()
 
-    residue = [d for d in _confronta(coppia).triggers if d.name == "trg_tbl_trg"]
+    residue = [d for d in _confronta(coppia).triggers if _e_trigger_di_prova(d.name)]
     assert residue == []
 
 
@@ -598,7 +621,7 @@ def test_corpo_del_trigger_diverso_si_rileva_e_si_corregge(coppia):
         engine.dispose()
 
     diff = _confronta(coppia)
-    trovati = [d for d in diff.triggers if d.name == "trg_tbl_trg"]
+    trovati = [d for d in diff.triggers if _e_trigger_di_prova(d.name)]
     assert [d.change for d in trovati] == [DEFINITION_MISMATCH]
 
     scripts = generate_sql_scripts(diff, target_env=coppia.col.nome)
