@@ -88,6 +88,16 @@ def _snapshot(env_name, dialetto, *, completo, schema=None):
         "sequences": {"seq_clienti": {"start": 100, "increment": 5, "minvalue": 1,
                                       "maxvalue": 9999, "cycle": False}} if completo else {},
         "synonyms": {"cli": "app.clienti"} if completo else {},
+        "triggers": {"trg_clienti": {
+            "table": "clienti",
+            "definition": "CREATE TRIGGER trg_clienti BEFORE INSERT ON clienti "
+                          "FOR EACH ROW BEGIN SET NEW.attivo = 1; END",
+        }} if completo else {},
+        "routines": {"function:calc_totale": {
+            "name": "calc_totale", "kind": "function", "drop_args": "x integer",
+            "definition": "CREATE FUNCTION calc_totale(x integer) RETURNS INTEGER AS "
+                          "BEGIN RETURN x * 2; END",
+        }} if completo else {},
     })
 
 
@@ -196,6 +206,35 @@ def test_sqlite_dichiara_di_non_saper_aggiungere_vincoli():
     assert any("non sa aggiungere vincoli" in s for s in vincoli)
 
 
+@pytest.mark.parametrize("dialetto", ["postgresql", "mysql", "oracle", "mssql"])
+def test_il_trigger_si_crea_dove_esiste(dialetto):
+    assert any(s.startswith("CREATE TRIGGER") for s in _script(dialetto)["triggers"])
+
+
+def test_sqlite_dichiara_di_non_supportare_le_routine():
+    routine = _script("sqlite")["routines"]
+    assert routine and all(s.startswith("--") for s in routine)
+
+
+@pytest.mark.parametrize("dialetto", ["postgresql", "mysql", "oracle", "mssql"])
+def test_la_funzione_si_crea_dove_esiste(dialetto):
+    assert any(s.startswith("CREATE FUNCTION") for s in _script(dialetto)["routines"])
+
+
+def test_postgresql_indica_gli_argomenti_nel_drop_della_funzione():
+    """Una funzione puo' essere sovraccaricata: il DROP deve dire quale firma,
+    non solo il nome — altrimenti PostgreSQL non sa quale togliere."""
+    riferimento = _snapshot("SVI", "postgresql", completo=True)
+    da_allineare = _snapshot("COL", "postgresql", completo=True)
+    # Stesso nome/tipo, corpo diverso: forza il percorso DROP + CREATE.
+    da_allineare.routines["function:calc_totale"].definition = (
+        "CREATE FUNCTION calc_totale(x integer) RETURNS INTEGER AS BEGIN RETURN x; END")
+
+    scripts = generate_sql_scripts(compare_snapshots(riferimento, da_allineare), "COL")
+    joined = "\n".join(scripts["routines"])
+    assert "DROP FUNCTION calc_totale(x integer)" in joined
+
+
 # --- schema -----------------------------------------------------------------
 
 
@@ -220,9 +259,10 @@ def test_ogni_dialetto_dichiara_tutte_le_capacita(dialetto):
     si genera lo script per un ambiente di produzione."""
     attese = {"add", "modify", "drop", "set_default", "drop_default", "modify_nullability",
               "alter_add_constraint", "view_or_replace", "sequences", "alter_sequence",
-              "create_synonym", "begin", "commit",
+              "create_synonym", "begin", "commit", "routines",
               "drop_table", "drop_index", "drop_constraint", "drop_foreign_key",
-              "drop_check", "drop_view", "drop_sequence", "drop_synonym"}
+              "drop_check", "drop_view", "drop_sequence", "drop_synonym", "drop_trigger",
+              "drop_procedure", "drop_function"}
     assert attese <= set(templates_for(dialetto))
 
 

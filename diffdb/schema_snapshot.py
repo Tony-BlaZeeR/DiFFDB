@@ -79,6 +79,43 @@ TRIGGER_QUERIES = {
     "sqlite": "SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'trigger'",
 }
 
+# Procedure e funzioni standalone (non i membri di un package Oracle, quelli
+# restano fuori: sono un'altra categoria, con la propria identita' separata
+# dal package che li contiene). Stesso principio dei trigger: si cattura il
+# CREATE completo cosi' com'e' con il modo nativo di ogni motore.
+#
+# Su PostgreSQL una funzione puo' essere sovraccaricata (stesso nome, firma
+# diversa): la terza colonna e' la lista degli argomenti nella forma che
+# DROP FUNCTION/PROCEDURE si aspetta, non solo il nome. Sugli altri motori non
+# esiste l'overload per le routine standalone, quindi non serve.
+ROUTINE_QUERIES = {
+    "postgresql": (
+        "SELECT p.proname, "
+        "CASE WHEN p.prokind = 'p' THEN 'procedure' ELSE 'function' END, "
+        "pg_get_functiondef(p.oid), pg_get_function_identity_arguments(p.oid) "
+        "FROM pg_proc p "
+        "JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE p.prokind IN ('f', 'p') "
+        "AND n.nspname = COALESCE(:schema, current_schema())"
+    ),
+    "oracle": (
+        "SELECT object_name, LOWER(object_type), "
+        "DBMS_METADATA.GET_DDL(object_type, object_name, owner) "
+        "FROM all_procedures "
+        "WHERE owner = NVL(:schema, USER) "
+        "AND object_type IN ('PROCEDURE', 'FUNCTION') "
+        "AND procedure_name IS NULL"  # NULL = la routine stessa, non un membro di un package
+    ),
+    "mssql": (
+        "SELECT o.name, CASE WHEN o.type = 'P' THEN 'procedure' ELSE 'function' END, "
+        "sm.definition "
+        "FROM sys.sql_modules sm "
+        "JOIN sys.objects o ON o.object_id = sm.object_id "
+        "WHERE o.type IN ('P', 'FN', 'TF', 'IF') "
+        "AND SCHEMA_NAME(o.schema_id) = COALESCE(:schema, SCHEMA_NAME())"
+    ),
+}
+
 # I sinonimi esistono solo su Oracle e SQL Server.
 SYNONYM_QUERIES = {
     "oracle": (
@@ -132,6 +169,26 @@ class TriggerSpec:
     definition: str
 
 
+def routine_key(kind: str, name: str) -> str:
+    """Chiave del dizionario delle routine: MySQL ammette una procedura e una
+    funzione con lo stesso nome nello stesso schema (sono oggetti di tipo
+    diverso), il solo nome non basterebbe a distinguerle."""
+    return f"{kind}:{name}"
+
+
+@dataclass
+class RoutineSpec:
+    """Una stored procedure o funzione standalone. Come per i trigger, la
+    definizione e' gia' un CREATE completo ed eseguibile nel dialetto di
+    provenienza. drop_args serve solo su PostgreSQL, dove una funzione puo'
+    essere sovraccaricata e il DROP deve indicare quale firma."""
+
+    name: str
+    kind: str            # "procedure" | "function"
+    definition: str
+    drop_args: str = ""
+
+
 @dataclass
 class Snapshot:
     """Struttura di un ambiente in un dato momento."""
@@ -145,6 +202,7 @@ class Snapshot:
     sequences: dict[str, SequenceSpec] = field(default_factory=dict)
     synonyms: dict[str, str] = field(default_factory=dict)     # nome -> oggetto puntato
     triggers: dict[str, TriggerSpec] = field(default_factory=dict)
+    routines: dict[str, RoutineSpec] = field(default_factory=dict)  # routine_key(kind,nome)->spec
     regole: Regole = field(default_factory=Regole)
 
     @property
@@ -257,11 +315,15 @@ def take_snapshot(env_name: str, engine: Engine, schema: str | None = None,
             if regole.sinonimo_incluso(nome)}
     if regole.categoria_inclusa("triggers"):
         snapshot.triggers = _fetch_triggers(engine, schema)
+    if regole.categoria_inclusa("routines"):
+        snapshot.routines = _fetch_routines(engine, schema)
 
     logger.info(
-        "Struttura di '%s' letta: %d tabelle, %d viste, %d sequenze, %d sinonimi, %d trigger.",
+        "Struttura di '%s' letta: %d tabelle, %d viste, %d sequenze, %d sinonimi, "
+        "%d trigger, %d routine.",
         env_name, len(snapshot.tables), len(snapshot.views),
-        len(snapshot.sequences), len(snapshot.synonyms), len(snapshot.triggers))
+        len(snapshot.sequences), len(snapshot.synonyms), len(snapshot.triggers),
+        len(snapshot.routines))
     return snapshot
 
 
@@ -599,6 +661,62 @@ def _fetch_mysql_triggers(engine: Engine, schema: str | None) -> dict[str, Trigg
             return triggers
     except SQLAlchemyError as exc:
         logger.warning("Lettura dei trigger fallita: %s", exc)
+        return {}
+
+
+def _fetch_routines(engine: Engine, schema: str | None) -> dict[str, RoutineSpec]:
+    """Procedure e funzioni complete. Come per i trigger, il testo catturato
+    e' gia' un CREATE eseguibile nel dialetto di provenienza."""
+    dialetto = engine.dialect.name
+    if dialetto == "mysql":
+        return _fetch_mysql_routines(engine, schema)
+
+    query = ROUTINE_QUERIES.get(dialetto)
+    if query is None:
+        return {}
+
+    try:
+        with engine.connect() as conn:
+            if dialetto == "oracle":
+                _disattiva_schema_in_ddl(conn)
+            params = {"schema": schema} if ":schema" in query else {}
+            righe = conn.execute(text(query), params).fetchall()
+    except SQLAlchemyError as exc:
+        logger.warning("Lettura delle routine fallita: %s", exc)
+        return {}
+
+    routines = {}
+    for riga in righe:
+        nome, kind, definizione = riga[0], riga[1], riga[2]
+        drop_args = riga[3] if len(riga) > 3 else ""
+        routines[routine_key(kind, nome)] = RoutineSpec(
+            name=nome, kind=kind, definition=_leggi_clob(definizione), drop_args=drop_args or "")
+    return routines
+
+
+def _fetch_mysql_routines(engine: Engine, schema: str | None) -> dict[str, RoutineSpec]:
+    """MySQL non ha un equivalente di pg_get_functiondef: SHOW CREATE
+    PROCEDURE/FUNCTION da' il testo completo, ma un'interrogazione per
+    routine, non una sola per tutto lo schema."""
+    quote = engine.dialect.identifier_preparer.quote
+    try:
+        with engine.connect() as conn:
+            nomi = conn.execute(text(
+                "SELECT routine_name, LOWER(routine_type) FROM information_schema.routines "
+                "WHERE routine_schema = COALESCE(:schema, DATABASE())"
+            ), {"schema": schema}).fetchall()
+
+            routines = {}
+            for nome, kind in nomi:
+                comando = "PROCEDURE" if kind == "procedure" else "FUNCTION"
+                # SHOW CREATE non accetta parametri bind: il nome viene dal
+                # catalogo del motore stesso, ma si quota comunque per correttezza.
+                riga = conn.execute(text(f"SHOW CREATE {comando} {quote(nome)}")).fetchone()
+                routines[routine_key(kind, nome)] = RoutineSpec(
+                    name=nome, kind=kind, definition=riga[2])
+            return routines
+    except SQLAlchemyError as exc:
+        logger.warning("Lettura delle routine fallita: %s", exc)
         return {}
 
 

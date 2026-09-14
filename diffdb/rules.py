@@ -37,7 +37,7 @@ FORMATO = 1
 NOME_PREDEFINITO = "diffdb.rules.json"
 
 # Le categorie che si possono spegnere in blocco.
-CATEGORIE = ("tables", "constraints", "views", "sequences", "synonyms", "triggers")
+CATEGORIE = ("tables", "constraints", "views", "sequences", "synonyms", "triggers", "routines")
 
 
 class RegoleNonValide(ValueError):

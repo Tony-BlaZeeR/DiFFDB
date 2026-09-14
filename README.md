@@ -13,16 +13,19 @@ allinearli. Con interfaccia grafica e con una CLI da mettere in pipeline.
   reali di START/INCREMENT) e sinonimi (Oracle e SQL Server)
 - Trigger (presenza **e corpo della definizione**): nessun dialetto li riflette
   via SQLAlchemy, si leggono con una query diretta sul catalogo di sistema
+- Stored procedure e funzioni standalone (presenza **e corpo della
+  definizione**), con lo stesso approccio dei trigger — i membri di un
+  package Oracle restano fuori, sono un'altra categoria
 
 ## Cosa produce
 
 - `differenze_ambienti.xlsx` — un foglio per tabelle, vincoli, viste, sequenze,
-  sinonimi, trigger. Ogni riga dice *cosa* differisce, *dove* manca e con che
-  *dettaglio*.
+  sinonimi, trigger, procedure e funzioni. Ogni riga dice *cosa* differisce,
+  *dove* manca e con che *dettaglio*.
 - `allinea_<ambiente>.sql` — uno script **per ogni direzione**, con SQL eseguibile
   (CREATE TABLE con colonne, tipi e FK; ALTER TABLE; CREATE INDEX; ADD CONSTRAINT;
-  CREATE VIEW; CREATE SEQUENCE; CREATE TRIGGER), compilato sul dialetto
-  dell'ambiente da allineare.
+  CREATE VIEW; CREATE SEQUENCE; CREATE TRIGGER; CREATE PROCEDURE/FUNCTION),
+  compilato sul dialetto dell'ambiente da allineare.
 - `annulla_<ambiente>.sql` — come disfare quell'allineamento (vedi sotto).
 - `snapshot.json` — la struttura di un ambiente congelata su file (vedi sotto).
 
@@ -291,8 +294,8 @@ python -m diffdb.cli --verify allinea_prod.sql PROD
 Esce con 0 se l'ambiente e' ancora quello di quando lo script e' stato generato,
 con 1 se e' cambiato nel frattempo — nel qual caso lo script non e' piu' valido e
 va rigenerato. L'impronta copre la struttura (tabelle, viste, sequenze, sinonimi,
-trigger, dialetto e schema): rinominare un ambiente o rifare lo snapshot un
-minuto dopo non la cambia.
+trigger, procedure e funzioni, dialetto e schema): rinominare un ambiente o
+rifare lo snapshot un minuto dopo non la cambia.
 
 Lo stesso vale per l'Excel, che ha un foglio **Informazioni**, e per gli snapshot,
 che portano la propria impronta dentro il file. Se esporti solo una parte delle
@@ -533,11 +536,18 @@ REPLACE: MySQL non lo supporta per i trigger in nessuna versione, e un solo
 percorso verificabile su tutti i motori batte un'ottimizzazione che varia da
 uno all'altro.
 
-Limite noto: su PostgreSQL e Oracle un trigger richiama una funzione o una
-procedura separata — il corpo che conta e' spesso li', non nel testo del
-trigger stesso, che puo' restare identico anche se la logica cambia.
-Confrontare anche le funzioni e le procedure e' un lavoro a parte, non ancora
-fatto: per ora DiFFDB vede il legame "trigger -> funzione", non la funzione.
+Su PostgreSQL e Oracle un trigger richiama una funzione o una procedura
+separata — il corpo che conta e' spesso li', non nel testo del trigger
+stesso, che puo' restare identico anche se la logica cambia. Da qui le
+**stored procedure e funzioni**: stesso principio dei trigger (nessuna
+riflessione via SQLAlchemy, si cattura il CREATE completo con
+`pg_get_functiondef`, `DBMS_METADATA.GET_DDL`, `sys.sql_modules`, `SHOW
+CREATE PROCEDURE`/`FUNCTION`), stesso DROP + CREATE sempre, mai CREATE OR
+REPLACE. Solo le routine standalone: i membri di un package Oracle restano
+fuori, sono un'altra categoria con un'identita' separata dal package che li
+contiene. Su PostgreSQL una funzione puo' essere sovraccaricata (stesso nome,
+firma diversa): il DROP indica anche gli argomenti, non solo il nome, o
+PostgreSQL non saprebbe quale togliere.
 
 ## Struttura
 

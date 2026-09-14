@@ -43,7 +43,13 @@ from diffdb import __version__
 from diffdb.connections import Connection
 from diffdb.diff_DB import DiffResult, compare_snapshots, default_signature
 from diffdb.rules import NESSUNA, a_dizionario, da_dizionario
-from diffdb.schema_snapshot import SequenceSpec, Snapshot, TriggerSpec, snapshot_connection
+from diffdb.schema_snapshot import (
+    RoutineSpec,
+    SequenceSpec,
+    Snapshot,
+    TriggerSpec,
+    snapshot_connection,
+)
 from diffdb.urls import mask_password
 
 logger = logging.getLogger(__name__)
@@ -181,7 +187,7 @@ def save(snapshot: Snapshot, path, source: str | None = None) -> Path:
 # descrivendo insiemi diversi, e `--verify` direbbe "tutto a posto" su uno
 # script generato con altre regole.
 CHIAVI_STRUTTURA = ("dialect", "schema", "tables", "views", "sequences", "synonyms",
-                    "triggers", "regole")
+                    "triggers", "routines", "regole")
 
 
 def fingerprint(snapshot: Snapshot) -> str:
@@ -226,6 +232,11 @@ def to_dict(snapshot: Snapshot, source: str | None = None) -> dict:
         "triggers": {
             name: {"table": spec.table, "definition": spec.definition}
             for name, spec in sorted(snapshot.triggers.items())
+        },
+        "routines": {
+            key: {"name": spec.name, "kind": spec.kind, "definition": spec.definition,
+                 "drop_args": spec.drop_args}
+            for key, spec in sorted(snapshot.routines.items())
         },
         "regole": _filtri(snapshot.regole),
     }
@@ -399,6 +410,11 @@ def from_dict(payload: dict, origin: str = "snapshot") -> Snapshot:
     snapshot.triggers = {
         name: TriggerSpec(name=name, table=spec.get("table"), definition=spec.get("definition", ""))
         for name, spec in (payload.get("triggers") or {}).items()
+    }
+    snapshot.routines = {
+        key: RoutineSpec(name=spec.get("name", ""), kind=spec.get("kind", "function"),
+                         definition=spec.get("definition", ""), drop_args=spec.get("drop_args", ""))
+        for key, spec in (payload.get("routines") or {}).items()
     }
 
     # Le regole tornano indietro per intero: `fingerprint()` le ricalcola, e

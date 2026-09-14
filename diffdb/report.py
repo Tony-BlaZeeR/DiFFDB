@@ -22,6 +22,7 @@ SECTION_TITLES = {
     "sequences": "Sequenze",
     "synonyms": "Sinonimi",
     "triggers": "Trigger",
+    "routines": "Procedure e funzioni",
 }
 
 COLONNE = ["Oggetto", "Tipo", "Campo", "Differenza", "Presente in", "Mancante in", "Dettaglio"]
