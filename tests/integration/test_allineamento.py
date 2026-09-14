@@ -221,6 +221,24 @@ SEZIONI_ALLINEAMENTO = ("sequences", "tables", "constraints", "views", "synonyms
 SEZIONI_ANNULLAMENTO = ("triggers", "synonyms", "views", "constraints", "tables", "sequences")
 
 
+def _esegui_ddl(conn, statement: str) -> None:
+    """execute(text(...)) di norma; exec_driver_sql solo su Oracle.
+
+    Un trigger Oracle contiene ":NEW"/":OLD", e text() li leggerebbe come
+    parametri bind di SQLAlchemy invece che come sintassi PL/SQL letterale,
+    fallendo con "a value is required for bind parameter 'NEW'".
+    exec_driver_sql manda la stringa al driver cosi' com'e', bypassando quella
+    lettura — ma bypassa anche l'escape di SQLAlchemy per i DBAPI %-style
+    (pymysql, mysqlclient): un DDL MySQL con un '%' non raddoppiato manderebbe
+    in errore pymysql con "unsupported format character". Va usato solo dove
+    serve, non ovunque.
+    """
+    if conn.dialect.name == "oracle":
+        conn.exec_driver_sql(statement)
+    else:
+        conn.execute(text(statement))
+
+
 def _esegui(url, scripts, sezioni=SEZIONI_ALLINEAMENTO):
     """Esegue lo script come lo eseguirebbe un DBA: nell'ordine del file."""
     eseguiti = []
@@ -230,13 +248,7 @@ def _esegui(url, scripts, sezioni=SEZIONI_ALLINEAMENTO):
             for blocco in scripts.get(sezione, []):
                 for statement in _istruzioni(blocco):
                     with engine.begin() as conn:
-                        # exec_driver_sql, non execute(text(...)): un trigger
-                        # Oracle contiene ":NEW"/":OLD", e text() li leggerebbe
-                        # come parametri bind invece che come sintassi PL/SQL
-                        # letterale, fallendo con "a value is required for
-                        # bind parameter 'NEW'". exec_driver_sql manda la
-                        # stringa al driver cosi' com'e', senza interpretarla.
-                        conn.exec_driver_sql(statement)
+                        _esegui_ddl(conn, statement)
                     eseguiti.append(statement)
     finally:
         engine.dispose()
@@ -509,13 +521,9 @@ def _prepara_ambiente_trigger(url, schema, dialetto, con_trigger: bool):
         _svuota(engine, schema)
         with engine.begin() as conn:
             for statement in TRIGGER_SETUP[dialetto]:
-                # exec_driver_sql, non execute(text(...)): un corpo PL/SQL
-                # Oracle contiene ":NEW"/":OLD", che text() leggerebbe come
-                # parametri bind invece che come sintassi letterale (vedi
-                # _esegui piu' sopra per lo stesso problema sullo script generato).
-                conn.exec_driver_sql(statement)
+                _esegui_ddl(conn, statement)
             if con_trigger:
-                conn.exec_driver_sql(TRIGGER_DDL[dialetto])
+                _esegui_ddl(conn, TRIGGER_DDL[dialetto])
     finally:
         engine.dispose()
 
@@ -527,6 +535,13 @@ def test_il_trigger_si_allinea_e_funziona(coppia):
                               con_trigger=True)
     _prepara_ambiente_trigger(coppia.col.url, coppia.col.schema, coppia.dialetto,
                               con_trigger=False)
+
+    # Diagnostica prima del confronto: se questo fallisce, il problema e' nella
+    # creazione o nella query di lettura, non nella logica di confronto.
+    svi_snapshot = snapshot_connection(coppia.svi.nome, coppia.svi.url, coppia.svi.schema)
+    assert "trg_tbl_trg" in svi_snapshot.triggers, (
+        f"[{coppia.dialetto}] il trigger appena creato in SVI non si legge dal "
+        f"catalogo: trovati {list(svi_snapshot.triggers)}")
 
     diff = _confronta(coppia)
     trovati = [d for d in diff.triggers if d.name == "trg_tbl_trg"]
@@ -578,7 +593,7 @@ def test_corpo_del_trigger_diverso_si_rileva_e_si_corregge(coppia):
     engine = create_engine(coppia.col.url)
     try:
         with engine.begin() as conn:
-            conn.exec_driver_sql(TRIGGER_CORPO_DIVERSO[dialetto])
+            _esegui_ddl(conn, TRIGGER_CORPO_DIVERSO[dialetto])
     finally:
         engine.dispose()
 
