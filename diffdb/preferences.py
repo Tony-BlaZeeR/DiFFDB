@@ -13,6 +13,8 @@ from diffdb.qt import QtCore
 NOME_FILE = "diffdb.ini"
 
 CHIAVE_LINGUA = "interfaccia/lingua"
+CHIAVE_VARIANTE = "interfaccia/variante"
+CHIAVE_TEMA = "interfaccia/tema"
 CHIAVE_CARTELLA_OUTPUT = "percorsi/cartella_output"
 
 # Dimensione e posizione in chiaro invece del blob di saveGeometry(): su una
@@ -44,6 +46,40 @@ def lingua() -> str:
 
 def imposta_lingua(codice: str) -> None:
     impostazioni().setValue(CHIAVE_LINGUA, codice)
+
+
+def variante() -> str:
+    """Aspetto dell'interfaccia: 'moderna' o 'retro'."""
+    valore = str(impostazioni().value(CHIAVE_VARIANTE, "moderna")).lower()
+    return valore if valore in ("moderna", "retro") else "moderna"
+
+
+def imposta_variante(nome: str) -> None:
+    impostazioni().setValue(CHIAVE_VARIANTE, nome)
+
+
+def tema() -> str:
+    """Chiaro o scuro. Vale per entrambe le varianti (Moderna e Retro)."""
+    valore = str(impostazioni().value(CHIAVE_TEMA, "scuro")).lower()
+    return valore if valore in ("scuro", "chiaro") else "scuro"
+
+
+def imposta_tema(nome: str) -> None:
+    impostazioni().setValue(CHIAVE_TEMA, nome)
+
+
+CHIAVE_ACCENTO = "interfaccia/accento"
+ACCENTO_PREDEFINITO = "#6FA888"
+
+
+def accento() -> str:
+    """Colore dell'accento (#RRGGBB). Verde di default."""
+    valore = str(impostazioni().value(CHIAVE_ACCENTO, ACCENTO_PREDEFINITO)).strip()
+    return valore if valore.startswith("#") and len(valore) == 7 else ACCENTO_PREDEFINITO
+
+
+def imposta_accento(colore: str) -> None:
+    impostazioni().setValue(CHIAVE_ACCENTO, colore)
 
 
 def geometria() -> dict | None:

@@ -2,7 +2,7 @@ import logging
 
 import qtawesome as qta
 
-from diffdb import i18n, keystore, preferences
+from diffdb import i18n, keystore, preferences, theme
 from diffdb.choose_tab import ChooseTab
 from diffdb.connections import load_connections, save_connections, usa_portachiavi
 from diffdb.dialogs import ask_connection
@@ -14,11 +14,17 @@ from diffdb.results_tab import ResultsTab
 from diffdb.rules import NESSUNA, RegoleNonValide, carica, cerca
 from diffdb.snapshot_io import SnapshotFile
 from diffdb.urls import mask_password, password_letterale, sanitize
+from diffdb.widgets import Riquadro, WordmarkGradiente
 from diffdb.worker import CompareWorker, SnapshotWorker
 
 logger = logging.getLogger(__name__)
 
-ICON_COLOR = "#A9B7C6"
+
+def _icon_color() -> str:
+    """Colore delle icone qtawesome: segue il tema attivo."""
+    return theme.corrente().get("text2", "#A9B7C6")
+
+
 TAB_HOME, TAB_CONFIGURAZIONE, TAB_SCELTA, TAB_RISULTATI = range(4)
 COL_NAME, COL_STRING, COL_PASSWORD, COL_SCHEMA, COL_EDIT, COL_DELETE = range(6)
 
@@ -28,6 +34,8 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
 
         self.drag_position = None
+        self.scanline = None
+        self.pulsante_colore = None
         self.connections = []
         self.thread = None
         self.worker = None
@@ -42,8 +50,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setMinimumSize(self._ui.minimumSize())
         self.resize(self._ui.size())
 
-        with open(resource_path("styles", "style.qss"), encoding="utf-8") as qss:
-            self.setStyleSheet(qss.read())
+        # Lo stile e' dell'applicazione (vedi app.py / theme.applica), cosi' vale
+        # anche per le finestre di dialogo native e si puo' cambiare a caldo.
 
         self.setWindowTitle("DiFFDB")
         self.setWindowIcon(QtGui.QIcon(resource_path("images", "logo.png")))
@@ -68,6 +76,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._ripristina_geometria()
         self._posiziona_presa()
+        for riquadro in self.findChildren(Riquadro):
+            riquadro.aggiorna_tema()
+        self._aggiorna_scanline()
 
     def _scorciatoie_globali(self):
         """Ctrl+1..4 per le schede, F5 per rifare l'ultimo confronto.
@@ -123,7 +134,7 @@ class MainWindow(QtWidgets.QMainWindow):
             table.setItem(row, COL_SCHEMA, QtWidgets.QTableWidgetItem(connection.schema or ""))
 
             edit_button = QtWidgets.QPushButton()
-            edit_button.setIcon(qta.icon("fa5s.pencil-alt", color=ICON_COLOR))
+            edit_button.setIcon(qta.icon("fa5s.pencil-alt", color=_icon_color()))
             edit_button.setToolTip(self.tr("Modifica"))
             edit_button.setAccessibleName(
                 self.tr("Modifica la connessione {0}").format(connection.name))
@@ -131,7 +142,7 @@ class MainWindow(QtWidgets.QMainWindow):
             table.setCellWidget(row, COL_EDIT, edit_button)
 
             delete_button = QtWidgets.QPushButton()
-            delete_button.setIcon(qta.icon("fa5s.trash-alt", color=ICON_COLOR))
+            delete_button.setIcon(qta.icon("fa5s.trash-alt", color=_icon_color()))
             delete_button.setToolTip(self.tr("Elimina"))
             delete_button.setAccessibleName(
                 self.tr("Elimina la connessione {0}").format(connection.name))
@@ -215,8 +226,20 @@ class MainWindow(QtWidgets.QMainWindow):
         logo_label = QtWidgets.QLabel(title_bar)
         logo_label.setPixmap(_logo(20))
 
-        title_label = QtWidgets.QLabel("DiFFDB", title_bar)
-        title_label.setObjectName("titleLabel")
+        self.title_wordmark = WordmarkGradiente("DiFFDB", 15, title_bar)
+
+        # Cambio aspetto: variante (Moderna/Retro) e, nella Moderna, chiaro/scuro.
+        self.variant_button = QtWidgets.QPushButton(title_bar)
+        self.variant_button.setObjectName("variantButton")
+        self.variant_button.setToolTip(self.tr("Cambia aspetto (Moderna / Retro)"))
+        self.variant_button.setAccessibleName(self.tr("Cambia aspetto"))
+        self.variant_button.clicked.connect(self._cambia_variante)
+
+        self.theme_button = QtWidgets.QPushButton(title_bar)
+        self.theme_button.setObjectName("themeButton")
+        self.theme_button.setToolTip(self.tr("Tema chiaro / scuro"))
+        self.theme_button.setAccessibleName(self.tr("Tema chiaro o scuro"))
+        self.theme_button.clicked.connect(self._cambia_tema)
 
         minimize_button = QtWidgets.QPushButton("_", title_bar)
         minimize_button.setObjectName("minimizeButton")
@@ -237,11 +260,15 @@ class MainWindow(QtWidgets.QMainWindow):
         close_button.clicked.connect(self.close)
 
         layout.addWidget(logo_label)
-        layout.addWidget(title_label)
+        layout.addWidget(self.title_wordmark)
         layout.addStretch()
+        layout.addWidget(self.variant_button)
+        layout.addWidget(self.theme_button)
         layout.addWidget(minimize_button)
         layout.addWidget(self.maximize_button)
         layout.addWidget(close_button)
+
+        self._aggiorna_icone_tema()
 
         self.setMenuWidget(title_bar)
         # Il trascinamento vale solo sulla barra: prima era attaccato alla finestra
@@ -268,6 +295,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._posiziona_presa()
+        if getattr(self, "scanline", None) is not None and self.scanline.isVisible():
+            self.scanline.setGeometry(self.rect())
+            self.scanline.raise_()
 
     def _posiziona_presa(self):
         if getattr(self, "size_grip", None) is None:
@@ -287,6 +317,75 @@ class MainWindow(QtWidgets.QMainWindow):
                 and not self.isMaximized():
             self.move(event.globalPosition().toPoint() - self.drag_position)
             event.accept()
+
+    # --- tema: variante e chiaro/scuro -------------------------------------
+
+    def _cambia_variante(self):
+        nuova = (theme.VARIANTE_RETRO if preferences.variante() == theme.VARIANTE_MODERNA
+                 else theme.VARIANTE_MODERNA)
+        preferences.imposta_variante(nuova)
+        self._applica_tema()
+
+    def _cambia_tema(self):
+        # Chiaro/scuro vale per entrambe le varianti: "tutto chiaro" o "tutto scuro".
+        nuovo = (theme.TEMA_CHIARO if preferences.tema() == theme.TEMA_SCURO
+                 else theme.TEMA_SCURO)
+        preferences.imposta_tema(nuovo)
+        self._applica_tema()
+
+    def _scegli_colore(self):
+        """Apre un selettore e applica subito l'accento scelto."""
+        iniziale = QtGui.QColor(preferences.accento())
+        colore = QtWidgets.QColorDialog.getColor(
+            iniziale, self, self.tr("Colore dell'interfaccia"))
+        if colore.isValid():
+            preferences.imposta_accento(colore.name().upper())
+            self._applica_tema()
+
+    def _ripristina_colore(self):
+        preferences.imposta_accento(preferences.ACCENTO_PREDEFINITO)
+        self._applica_tema()
+
+    def _applica_tema(self):
+        """Riapplica la tavolozza all'applicazione e ricolora cio' che sta nel codice."""
+        app = QtWidgets.QApplication.instance()
+        theme.applica(app, preferences.variante(), preferences.tema(), preferences.accento())
+        self._aggiorna_icone_tema()
+        self._recolor_tab_icons()
+        self.refresh_conn_table()          # le icone matita/cestino sono colorate a mano
+        self.results_tab.aggiorna_tema()   # i colori delle direzioni del diff
+        self.home_tab.aggiorna_tema()      # il wordmark a gradiente
+        self.title_wordmark.imposta_tema()
+        for riquadro in self.findChildren(Riquadro):   # titoli TUI e angoli
+            riquadro.aggiorna_tema()
+        self._aggiorna_scanline()
+
+    def _aggiorna_icone_tema(self):
+        retro = preferences.variante() == theme.VARIANTE_RETRO
+        self.variant_button.setIcon(
+            qta.icon("fa5s.desktop" if retro else "fa5s.terminal", color=_icon_color()))
+        # Chiaro/scuro vale per entrambe le varianti: il tasto c'e' sempre.
+        chiaro = preferences.tema() == theme.TEMA_CHIARO
+        self.theme_button.setIcon(
+            qta.icon("fa5s.moon" if chiaro else "fa5s.sun", color=_icon_color()))
+
+    def _recolor_tab_icons(self):
+        for indice, nome in ((TAB_HOME, "fa5s.home"),
+                             (TAB_CONFIGURAZIONE, "fa5s.cog"),
+                             (TAB_SCELTA, "fa5s.database"),
+                             (TAB_RISULTATI, "fa5s.exchange-alt")):
+            self.tabWidget.setTabIcon(indice, qta.icon(nome, color=_icon_color()))
+
+    def _aggiorna_scanline(self):
+        """Overlay a scanline, solo in variante Retro."""
+        retro = preferences.variante() == theme.VARIANTE_RETRO
+        if retro and getattr(self, "scanline", None) is None:
+            self.scanline = _Scanline(self)
+        if getattr(self, "scanline", None) is not None:
+            self.scanline.setVisible(retro)
+            if retro:
+                self.scanline.setGeometry(self.rect())
+                self.scanline.raise_()
 
     def _ripristina_geometria(self):
         salvata = preferences.geometria()
@@ -316,13 +415,14 @@ class MainWindow(QtWidgets.QMainWindow):
             on_export_excel=self.export_excel, on_export_sql=self.export_sql)
 
         self.tabWidget.insertTab(TAB_HOME, self.home_tab,
-                                 qta.icon("fa5s.home", color=ICON_COLOR), self.tr("Home"))
+                                 qta.icon("fa5s.home", color=_icon_color()), self.tr("Home"))
         self.tabWidget.insertTab(TAB_CONFIGURAZIONE, tab_config,
-                                 qta.icon("fa5s.cog", color=ICON_COLOR), self.tr("Configurazione"))
+                                 qta.icon("fa5s.cog", color=_icon_color()),
+                                 self.tr("Configurazione"))
         self.tabWidget.insertTab(TAB_SCELTA, self.choose_tab,
-                                 qta.icon("fa5s.database", color=ICON_COLOR), self.tr("Scelta"))
+                                 qta.icon("fa5s.database", color=_icon_color()), self.tr("Scelta"))
         self.tabWidget.insertTab(TAB_RISULTATI, self.results_tab,
-                                 qta.icon("fa5s.exchange-alt", color=ICON_COLOR),
+                                 qta.icon("fa5s.exchange-alt", color=_icon_color()),
                                  self.tr("Risultati"))
 
         self.home_tab.vai_al_confronto.connect(
@@ -335,6 +435,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.choose_tab.annulla_operazione.connect(self.annulla_operazione)
         self.choose_tab.salva_snapshot.connect(self.save_snapshot)
         self.choose_tab.confronta_con_file.connect(self.compare_with_snapshot_file)
+        self.choose_tab.riprova.connect(self.start_comparison)
+        self.choose_tab.modifica_connessione.connect(self._modifica_db2)
 
         self._sistema_intestazione_connessioni(tab_config)
         self._aggiungi_preferenze(tab_config)
@@ -350,7 +452,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         layout.removeWidget(pulsante)
         pulsante.setText(self.tr("Aggiungi connessione"))
-        pulsante.setIcon(qta.icon("fa5s.plus", color=ICON_COLOR))
+        pulsante.setIcon(qta.icon("fa5s.plus", color=_icon_color()))
         pulsante.setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum,
                                QtWidgets.QSizePolicy.Policy.Fixed)
 
@@ -393,11 +495,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self.language_combo.currentIndexChanged.connect(self._cambia_lingua)
 
         riga.addWidget(self.language_combo)
+        riga.addSpacing(24)
+
+        # Colore dell'interfaccia: alcuni preset piu' un selettore libero.
+        riga.addWidget(QtWidgets.QLabel(self.tr("Colore:"), tab_config))
+        for colore in ("#6FA888", "#49B0A0", "#3FB6C9", "#5C86C8",
+                       "#B07CD8", "#D06AA8", "#C96A6A", "#C9A227"):
+            riga.addWidget(self._pastiglia_preset(colore, tab_config))
+
+        self.pulsante_colore = QtWidgets.QPushButton(self.tr("Personalizza..."), tab_config)
+        self.pulsante_colore.clicked.connect(self._scegli_colore)
+        riga.addWidget(self.pulsante_colore)
+
+        ripristina = QtWidgets.QPushButton(tab_config)
+        ripristina.setIcon(qta.icon("fa5s.undo", color=_icon_color()))
+        ripristina.setToolTip(self.tr("Ripristina il colore predefinito"))
+        ripristina.clicked.connect(self._ripristina_colore)
+        riga.addWidget(ripristina)
         riga.addStretch()
 
         layout.addWidget(separatore)
         layout.addWidget(intestazione)
         layout.addLayout(riga)
+
+    def _pastiglia_preset(self, colore: str, parent) -> QtWidgets.QPushButton:
+        """Quadratino cliccabile che imposta un accento predefinito."""
+        pulsante = QtWidgets.QPushButton(parent)
+        pulsante.setFixedSize(22, 22)
+        pulsante.setCursor(Qt.CursorShape.PointingHandCursor)
+        pulsante.setToolTip(colore)
+        pulsante.setStyleSheet(
+            f"background-color: {colore}; border: 1px solid rgba(0,0,0,60);"
+            f" border-radius: 4px;")
+        pulsante.clicked.connect(lambda _=False, c=colore: self._imposta_colore(c))
+        return pulsante
+
+    def _imposta_colore(self, colore: str):
+        preferences.imposta_accento(colore)
+        self._applica_tema()
 
     def _cambia_lingua(self):
         codice = self.language_combo.currentData()
@@ -450,7 +585,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.tr("Seleziona due ambienti diversi da confrontare."))
             return
 
-        self.choose_tab.imposta_stato(self.tr("Confronto in corso..."))
+        self.choose_tab.mostra_avanzamento(self.tr("Confronto in corso..."))
         self._run(CompareWorker(conn1, conn2, self.regole), self.on_comparison_done)
 
     def compare_with_snapshot_file(self):
@@ -475,7 +610,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         # La baseline sta a sinistra: si legge "cosa e' cambiato da allora a oggi".
-        self.choose_tab.imposta_stato(self.tr("Confronto con lo snapshot in corso..."))
+        self.choose_tab.mostra_avanzamento(self.tr("Confronto con lo snapshot in corso..."))
         self._run(CompareWorker(baseline, conn1, self.regole), self.on_comparison_done)
 
     def save_snapshot(self):
@@ -494,12 +629,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if not path:
             return
 
-        self.choose_tab.imposta_stato(
+        self.choose_tab.mostra_avanzamento(
             self.tr("Lettura della struttura di {0}...").format(conn1.name))
         self._run(SnapshotWorker(conn1, path, self.regole), self.on_snapshot_saved)
 
     def on_comparison_done(self, diff):
         self.cleanup_thread()
+        self.choose_tab.mostra_scelta()
 
         # Annotato per la schermata iniziale: e' la prima cosa che si cerca
         # riaprendo l'applicazione.
@@ -519,17 +655,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def on_snapshot_saved(self, path):
         self.cleanup_thread()
+        self.choose_tab.mostra_scelta()
         self.choose_tab.imposta_stato(self.tr("Snapshot salvato."))
         QtWidgets.QMessageBox.information(
             self, self.tr("Snapshot salvato"), self.tr("Salvato in:\n{0}").format(path))
 
     def on_comparison_failed(self, message):
         self.cleanup_thread()
-        self.choose_tab.imposta_stato(self.tr("Operazione fallita."))
         # I driver mettono l'URL completo nei messaggi d'errore: va mascherato
-        # prima di finire in una finestra che l'utente fotografa e allega a un ticket.
-        QtWidgets.QMessageBox.critical(
-            self, self.tr("Errore di connessione"), sanitize(message))
+        # prima di finire in una schermata che l'utente fotografa e allega a un ticket.
+        self.choose_tab.mostra_errore(sanitize(message))
+        self.tabWidget.setCurrentIndex(TAB_SCELTA)
 
     def _run(self, worker, on_finished):
         """Manda un worker su un thread suo. Uno alla volta: la GUI ne mostra uno solo."""
@@ -541,7 +677,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.worker = worker
         worker.moveToThread(self.thread)
         self.thread.started.connect(worker.run)
-        worker.progress.connect(self.choose_tab.imposta_stato)
+        worker.progress.connect(self.choose_tab.avanza)
         worker.finished.connect(on_finished)
         worker.failed.connect(self.on_comparison_failed)
         if hasattr(worker, "annullato"):
@@ -556,7 +692,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def on_annullato(self):
         self.cleanup_thread()
+        self.choose_tab.mostra_scelta()
         self.choose_tab.imposta_stato(self.tr("Operazione annullata."))
+
+    def _modifica_db2(self):
+        """Apre la connessione da allineare in modifica, dalla schermata d'errore."""
+        _, conn2 = self.selected_connections()
+        if conn2 is None:
+            return
+        for riga, connessione in enumerate(self.connections):
+            if connessione.name == conn2.name:
+                self.choose_tab.mostra_scelta()
+                self.tabWidget.setCurrentIndex(TAB_CONFIGURAZIONE)
+                self.edit_connection(riga)
+                return
 
     def _set_busy(self, busy: bool):
         self.choose_tab.imposta_occupato(busy)
@@ -632,6 +781,24 @@ def _carica_regole():
         return NESSUNA
     logger.info("Regole da '%s': %s", percorso, regole.descrizione() or "nessun filtro")
     return regole
+
+
+class _Scanline(QtWidgets.QWidget):
+    """Righe orizzontali tenui sopra tutta la finestra: l'atmosfera da terminale
+    della variante Retro. Trasparente al mouse, non intercetta i clic."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+    def paintEvent(self, _event):
+        painter = QtGui.QPainter(self)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor(0, 0, 0, 38))
+        for y in range(0, self.height(), 3):
+            painter.drawRect(0, y, self.width(), 1)
 
 
 def _logo(size: int) -> QtGui.QPixmap:
