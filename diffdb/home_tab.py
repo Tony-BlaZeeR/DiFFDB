@@ -12,6 +12,7 @@ from diffdb.connections import Connection, usa_portachiavi
 from diffdb.paths import resource_path
 from diffdb.qt import Qt, QtCore, QtGui, QtWidgets, Signal
 from diffdb.urls import password_letterale
+from diffdb.widgets import Riquadro, WordmarkGradiente
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +48,9 @@ class HomeTab(QtWidgets.QWidget):
             Qt.TransformationMode.SmoothTransformation))
 
         testi = QtWidgets.QVBoxLayout()
-        testi.setSpacing(2)
-        titolo = QtWidgets.QLabel("DiFFDB")
-        titolo.setProperty("ruolo", "titolo")
+        testi.setSpacing(4)
+        titolo = WordmarkGradiente("DiFFDB", 30)
+        self._wordmark = titolo
         sottotitolo = QtWidgets.QLabel(self.tr(
             "Confronta la struttura di due database e genera lo script per allinearli."))
         sottotitolo.setProperty("ruolo", "sottotitolo")
@@ -63,14 +64,14 @@ class HomeTab(QtWidgets.QWidget):
         return riga
 
     def _riquadro_ultimo_confronto(self) -> QtWidgets.QFrame:
-        self.riquadro_ultimo = QtWidgets.QFrame()
-        self.riquadro_ultimo.setProperty("ruolo", "riquadro")
+        self.riquadro_ultimo = Riquadro(self.tr("Ultimo confronto"))
         layout = QtWidgets.QVBoxLayout(self.riquadro_ultimo)
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(6)
 
         intestazione = QtWidgets.QLabel(self.tr("Ultimo confronto"))
         intestazione.setProperty("ruolo", "didascalia")
+        self.riquadro_ultimo.registra_etichetta(intestazione)
 
         self.ultimo_ambienti = QtWidgets.QLabel("")
         self.ultimo_dettaglio = QtWidgets.QLabel("")
@@ -92,14 +93,14 @@ class HomeTab(QtWidgets.QWidget):
         return self.riquadro_ultimo
 
     def _riquadro_connessioni(self) -> QtWidgets.QFrame:
-        riquadro = QtWidgets.QFrame()
-        riquadro.setProperty("ruolo", "riquadro")
+        riquadro = Riquadro(self.tr("Connessioni"))
         layout = QtWidgets.QVBoxLayout(riquadro)
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(8)
 
         intestazione = QtWidgets.QLabel(self.tr("Connessioni"))
         intestazione.setProperty("ruolo", "didascalia")
+        riquadro.registra_etichetta(intestazione)
 
         self.riga_pastiglie = QtWidgets.QHBoxLayout()
         self.riga_pastiglie.setSpacing(6)
@@ -129,6 +130,10 @@ class HomeTab(QtWidgets.QWidget):
     def aggiorna(self, connessioni: list[Connection], ultimo_confronto=None):
         self._mostra_ultimo(ultimo_confronto)
         self._mostra_connessioni(connessioni)
+
+    def aggiorna_tema(self):
+        """Ridisegna il wordmark con i colori del nuovo tema."""
+        self._wordmark.imposta_tema()
 
     def _mostra_ultimo(self, ultimo):
         self._ultimo = ultimo

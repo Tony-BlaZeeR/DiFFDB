@@ -9,8 +9,10 @@ E' pura presentazione del DiffResult che il confronto ha gia' prodotto:
 
 import logging
 
+from diffdb import theme
 from diffdb.diff_DB import MISSING
 from diffdb.qt import Qt, QtGui, QtWidgets
+from diffdb.widgets import Riquadro
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +22,9 @@ logger = logging.getLogger(__name__)
 
 DIFF_ROLE = Qt.ItemDataRole.UserRole  # ci appendo l'oggetto Difference
 
-# Colori, verificati a 4.5:1 sul fondo piu' chiaro dell'albero (WCAG AA).
-# I precedenti stavano a 2.64:1 e 3.18:1: leggibili da chi ci vede bene, molto
-# meno da tutti gli altri.
-COLOR_MISSING_HERE = QtGui.QColor("#97B188")
-COLOR_ONLY_HERE = QtGui.QColor("#DA9C69")
-COLOR_MISMATCH = QtGui.QColor("#D9A343")
+# I colori delle tre direzioni arrivano dal tema attivo (theme.colori_diff),
+# cosi' seguono variante e chiaro/scuro; sono scelti per restare a >=4.5:1 sul
+# fondo dell'albero (WCAG AA) in ogni tavolozza.
 
 # Il colore non basta: chi non distingue verde e arancio vedrebbe tre righe
 # identiche. Ogni direzione porta anche un simbolo, spiegato dalla legenda.
@@ -45,7 +44,52 @@ class ResultsTab(QtWidgets.QWidget):
     # --- costruzione UI ---------------------------------------------------
 
     def _build_ui(self):
-        layout = QtWidgets.QVBoxLayout(self)
+        radice = QtWidgets.QVBoxLayout(self)
+        radice.setContentsMargins(0, 0, 0, 0)
+        self._stack = QtWidgets.QStackedWidget()
+        radice.addWidget(self._stack)
+        self._stack.addWidget(self._pagina_risultati())
+        self._stack.addWidget(self._pagina_nessuna_differenza())
+        self._scorciatoie()
+        self._set_buttons_enabled(False)
+
+    def _pagina_nessuna_differenza(self) -> QtWidgets.QWidget:
+        """Esito positivo: gli ambienti sono allineati, niente da generare."""
+        pagina = QtWidgets.QWidget()
+        esterno = QtWidgets.QVBoxLayout(pagina)
+        esterno.addStretch()
+
+        riga = QtWidgets.QHBoxLayout()
+        riga.addStretch()
+        card = Riquadro()
+        card.setMaximumWidth(520)
+        layout = QtWidgets.QVBoxLayout(card)
+        layout.setContentsMargins(32, 28, 32, 28)
+        layout.setSpacing(12)
+
+        segno = QtWidgets.QLabel("✓")   # spunta
+        segno.setProperty("ruolo", "conteggio")
+        segno.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        titolo = QtWidgets.QLabel(self.tr("Nessuna differenza"))
+        titolo.setProperty("ruolo", "titolo")
+        titolo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.nodiff_messaggio = QtWidgets.QLabel("")
+        self.nodiff_messaggio.setProperty("ruolo", "sottotitolo")
+        self.nodiff_messaggio.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.nodiff_messaggio.setWordWrap(True)
+
+        layout.addWidget(segno)
+        layout.addWidget(titolo)
+        layout.addWidget(self.nodiff_messaggio)
+        riga.addWidget(card)
+        riga.addStretch()
+        esterno.addLayout(riga)
+        esterno.addStretch()
+        return pagina
+
+    def _pagina_risultati(self) -> QtWidgets.QWidget:
+        pagina = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(pagina)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(12)
 
@@ -85,9 +129,7 @@ class ResultsTab(QtWidgets.QWidget):
         bottom.addWidget(self.export_excel_button)
         bottom.addWidget(self.export_sql_button)
         layout.addLayout(bottom)
-
-        self._scorciatoie()
-        self._set_buttons_enabled(False)
+        return pagina
 
     def _scorciatoie(self):
         """Le scorciatoie valgono solo dentro questa scheda.
@@ -114,9 +156,8 @@ class ResultsTab(QtWidgets.QWidget):
         E' la prima cosa che si guarda: prima era una riga di testo piccolo che
         diceva solo il totale.
         """
-        riquadro = QtWidgets.QFrame()
+        riquadro = Riquadro(self.tr("Riepilogo"))
         riquadro.setObjectName("resultsSummary")
-        riquadro.setProperty("ruolo", "riquadro")
         layout = QtWidgets.QHBoxLayout(riquadro)
         layout.setContentsMargins(18, 12, 18, 12)
         layout.setSpacing(18)
@@ -183,8 +224,19 @@ class ResultsTab(QtWidgets.QWidget):
     # --- popolamento ------------------------------------------------------
 
     def show_result(self, diff):
-        """Riempie l'albero con un DiffResult."""
+        """Riempie l'albero con un DiffResult, o mostra l'esito positivo."""
         self._diff = diff
+
+        if diff.is_empty:
+            e1, e2 = diff.snapshot1.env_name, diff.snapshot2.env_name
+            self.nodiff_messaggio.setText(self.tr(
+                "{0} e {1} hanno la stessa struttura: non c'e' niente da allineare.")
+                .format(e1, e2))
+            self._stack.setCurrentIndex(1)
+            self._set_buttons_enabled(False)
+            return
+
+        self._stack.setCurrentIndex(0)
         self.tree.blockSignals(True)
         self.tree.clear()
 
@@ -256,9 +308,26 @@ class ResultsTab(QtWidgets.QWidget):
         return item
 
     def _color_for(self, d) -> QtGui.QColor:
-        return {SIMBOLO_MANCA_NEL_PRIMO: COLOR_MISSING_HERE,
-                SIMBOLO_MANCA_NEL_SECONDO: COLOR_ONLY_HERE}.get(
-                    self._simbolo(d), COLOR_MISMATCH)
+        colori = theme.colori_diff()
+        return {SIMBOLO_MANCA_NEL_PRIMO: colori["manca_primo"],
+                SIMBOLO_MANCA_NEL_SECONDO: colori["solo_qui"]}.get(
+                    self._simbolo(d), colori["diverso"])
+
+    def aggiorna_tema(self):
+        """Ricolora le righe gia' presenti quando si cambia tema a caldo."""
+        if self._diff is None:
+            return
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            sezione = root.child(i)
+            for j in range(sezione.childCount()):
+                figlio = sezione.child(j)
+                d = figlio.data(0, DIFF_ROLE)
+                if d is None:
+                    continue
+                colore = self._color_for(d)
+                for colonna in range(self.tree.columnCount()):
+                    figlio.setForeground(colonna, colore)
 
     def _simbolo(self, d) -> str:
         """Il verso della differenza, in un carattere.
