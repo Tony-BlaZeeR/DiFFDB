@@ -1,5 +1,7 @@
 # DiFFDB
 
+> 🇮🇹 Italiano — [🇬🇧 English](README.en.md)
+
 Confronta la **struttura** di due database che dovrebbero avere lo stesso schema
 (sviluppo, collaudo, produzione), mostra le differenze e genera lo script SQL per
 allinearli. Con interfaccia grafica e con una CLI da mettere in pipeline.
