@@ -18,6 +18,7 @@ icon = "diffdb/images/logo.ico" if os.path.exists("diffdb/images/logo.ico") else
 datas = [
     ("diffdb/ui", "diffdb/ui"),
     ("diffdb/styles", "diffdb/styles"),
+    ("diffdb/fonts", "diffdb/fonts"),
     ("diffdb/images", "diffdb/images"),
     # Solo i cataloghi compilati: i .ts sono i sorgenti della traduzione.
     # Vanno rigenerati prima della build (vedi README, sezione Traduzioni).

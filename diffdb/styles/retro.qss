@@ -1,0 +1,200 @@
+/* DiFFDB - Variante RETRO "Retro" (template).
+   Terminale/TUI: verde su nero, spigoli vivi (border-radius 0), monospace,
+   ambra come unico accento caldo. Graffe QSS raddoppiate per format_map. */
+
+* {{
+    font-family: "{font_ui}";
+    font-size: 13px;
+    color: {text};
+    outline: 0;
+}}
+
+QWidget {{ background-color: {bg}; }}
+QMainWindow, #AppRoot {{ background-color: {bg}; }}
+QLabel {{ background-color: transparent; color: {text}; }}
+
+QToolTip {{
+    background-color: {surface};
+    color: {text};
+    border: 1px solid {border_strong};
+    padding: 3px 7px;
+}}
+
+/* --- pulsanti: bordo netto, hover a video inverso ---------------------- */
+QPushButton {{
+    background-color: {surface};
+    color: {text2};
+    border: 1px solid {border_strong};
+    padding: 6px 12px;
+    border-radius: 0;
+}}
+QPushButton:hover {{ background-color: {accent}; color: {bg}; }}
+QPushButton:pressed {{ background-color: {accent_strong}; color: {bg}; }}
+QPushButton:disabled {{ color: {disabled_text}; border-color: {border}; background-color: {bg}; }}
+
+/* Primario: blocco invertito, come un pulsante di una TUI. */
+QPushButton[ruolo="primario"] {{
+    background-color: {accent_strong};
+    color: {bg};
+    border: 1px solid {accent_strong};
+    padding: 8px 18px;
+    font-weight: 600;
+    border-radius: 0;
+}}
+QPushButton[ruolo="primario"]:hover {{ background-color: {text}; border-color: {text}; }}
+QPushButton[ruolo="primario"]:pressed {{ background-color: {accent}; border-color: {accent}; }}
+QPushButton[ruolo="primario"]:disabled {{
+    background-color: {raised}; color: {disabled_text}; border-color: {border};
+}}
+
+/* --- campi: prefisso a riga di comando ad opera del codice ------------- */
+QLineEdit, QPlainTextEdit, QTextEdit {{
+    background-color: {code};
+    color: {text};
+    border: 1px solid {border_strong};
+    padding: 6px 8px;
+    border-radius: 0;
+    selection-background-color: {sel_bg};
+    selection-color: {sel_text};
+}}
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
+    border-color: {accent_strong}; background-color: {surface};
+}}
+
+QComboBox {{
+    background-color: {code};
+    color: {text};
+    border: 1px solid {border_strong};
+    border-radius: 0;
+    padding: 6px 8px;
+}}
+QComboBox:focus {{ border-color: {accent_strong}; }}
+QComboBox::drop-down {{ border: none; width: 20px; }}
+QComboBox QAbstractItemView {{
+    background-color: {surface};
+    color: {text};
+    border: 1px solid {border_strong};
+    selection-background-color: {sel_bg};
+    selection-color: {sel_text};
+    outline: 0;
+}}
+
+/* --- schede: linguette squadrate, attiva a video inverso --------------- */
+QTabWidget::pane {{ border: 1px solid {border_strong}; top: -1px; }}
+QTabBar::tab {{
+    background-color: {bg};
+    color: {text2};
+    border: 1px solid {border};
+    padding: 7px 14px;
+    border-radius: 0;
+    font-weight: 500;
+}}
+QTabBar::tab:hover {{ background-color: {hover}; color: {text}; }}
+QTabBar::tab:selected {{
+    background-color: {accent_strong};
+    color: {bg};
+    border-color: {accent_strong};
+}}
+
+/* --- tabelle e alberi: griglia a bordi netti --------------------------- */
+QTreeView, QTreeWidget, QTableView, QTableWidget, QListView {{
+    background-color: {code};
+    alternate-background-color: {surface};
+    color: {text};
+    border: 1px solid {border_strong};
+    border-radius: 0;
+    selection-background-color: {sel_bg};
+    selection-color: {sel_text};
+    gridline-color: {border};
+    outline: 0;
+}}
+QTreeView::item, QTreeWidget::item, QTableWidget::item {{ padding: 5px 3px; border: none; }}
+QTreeView::item:selected, QTreeWidget::item:selected,
+QTableWidget::item:selected {{ background-color: {sel_bg}; color: {sel_text}; }}
+
+QHeaderView::section {{
+    background-color: {titlebar};
+    color: {accent_strong};
+    border: none;
+    border-right: 1px solid {border};
+    border-bottom: 1px solid {border_strong};
+    padding: 7px 8px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QTableCornerButton::section {{ background-color: {titlebar}; border: none; }}
+
+QTreeView::indicator, QTreeWidget::indicator,
+QTableWidget::indicator, QCheckBox::indicator {{
+    width: 14px; height: 14px;
+    border: 1px solid {border_strong};
+    border-radius: 0;
+    background-color: {code};
+}}
+QTreeView::indicator:hover, QTreeWidget::indicator:hover,
+QCheckBox::indicator:hover {{ border-color: {accent_strong}; }}
+QTreeView::indicator:checked, QTreeWidget::indicator:checked,
+QTableWidget::indicator:checked, QCheckBox::indicator:checked {{
+    background-color: {accent_strong}; border-color: {accent_strong};
+}}
+QTreeView::indicator:indeterminate, QTreeWidget::indicator:indeterminate {{
+    background-color: {minus}; border-color: {minus};
+}}
+
+/* --- barre di scorrimento a blocco ------------------------------------- */
+QScrollBar:vertical {{ background: {code}; width: 12px; margin: 0; border-left: 1px solid {border}; }}
+QScrollBar:horizontal {{ background: {code}; height: 12px; margin: 0; border-top: 1px solid {border}; }}
+QScrollBar::handle {{ background-color: {border_strong}; border-radius: 0; }}
+QScrollBar::handle:vertical {{ min-height: 24px; }}
+QScrollBar::handle:horizontal {{ min-width: 24px; }}
+QScrollBar::handle:hover {{ background-color: {accent_strong}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+
+QMenu {{ background-color: {surface}; color: {text}; border: 1px solid {border_strong}; }}
+QMenu::item {{ padding: 6px 18px; }}
+QMenu::item:selected {{ background-color: {sel_bg}; color: {sel_text}; }}
+
+/* --- gerarchia tipografica --------------------------------------------- */
+QLabel[ruolo="titolo"] {{
+    font-family: "{font_logo}"; font-size: 17px; color: {accent_strong}; letter-spacing: 1px;
+}}
+QLabel[ruolo="sottotitolo"] {{ font-size: 13px; color: {text2}; }}
+QLabel[ruolo="didascalia"] {{ font-size: 11px; color: {muted}; }}
+QLabel[ruolo="conteggio"] {{ font-family: "{font_logo}"; font-size: 34px; color: {accent_strong}; }}
+
+QLabel[pastiglia="neutra"], QLabel[pastiglia="buona"],
+QLabel[pastiglia="attenzione"], QLabel[pastiglia="allarme"] {{
+    border-radius: 0; padding: 2px 8px; font-size: 11px; font-weight: 600;
+}}
+QLabel[pastiglia="neutra"] {{ background-color: {surface}; color: {text2}; border: 1px solid {border_strong}; }}
+QLabel[pastiglia="buona"] {{ background-color: {plus_bg}; color: {plus}; border: 1px solid {plus_border}; }}
+QLabel[pastiglia="attenzione"] {{ background-color: {minus_bg}; color: {minus}; border: 1px solid {minus_border}; }}
+QLabel[pastiglia="allarme"] {{ background-color: {error_bg}; color: {error}; border: 1px solid {error_border}; }}
+
+QFrame[ruolo="riquadro"] {{
+    background-color: {surface};
+    border: 1px solid {border_strong};
+    border-radius: 0;
+}}
+QFrame[ruolo="separatore"] {{ background-color: {divider}; max-height: 1px; border: none; }}
+
+/* --- barra del titolo -------------------------------------------------- */
+#titleBar {{ background-color: {titlebar}; border-bottom: 1px solid {border_strong}; }}
+#titleBar QLabel {{ background-color: transparent; color: {text}; }}
+#titleLabel {{ font-family: "{font_logo}"; font-size: 14px; color: {accent_strong}; letter-spacing: 1px; }}
+#titleBar QPushButton {{
+    background-color: transparent; color: {text2};
+    border: none; border-radius: 0; padding: 5px 9px;
+}}
+#titleBar QPushButton:hover {{ background-color: {accent_strong}; color: {bg}; }}
+#closeButton:hover {{ background-color: {error}; color: {bg}; }}
+
+QSizeGrip {{ background: transparent; width: 16px; height: 16px; }}
+
+/* --- barra di avanzamento a blocco ------------------------------------- */
+QProgressBar {{ background-color: {code}; border: 1px solid {border_strong}; border-radius: 0; }}
+QProgressBar::chunk {{ background-color: {accent_strong}; }}
+
+QMessageBox, QDialog {{ background-color: {bg}; }}
+QMessageBox QLabel {{ color: {text}; }}

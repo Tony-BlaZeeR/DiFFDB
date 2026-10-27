@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from diffdb import theme  # noqa: E402
 from diffdb.qt import QtWidgets  # noqa: E402
 
 RADICE = Path(__file__).resolve().parent.parent
@@ -26,9 +27,35 @@ RADICE = Path(__file__).resolve().parent.parent
 AA_TESTO = 4.5
 AA_ELEMENTI = 3.0   # elementi di interfaccia e testo grande
 
-# Tutti i fondi su cui puo' capitare del testo: se passa sul piu' chiaro,
-# passa ovunque.
-FONDI = ["#2B2B2B", "#313335", "#35383A", "#3C3F41"]
+# Le tre tavolozze spedite: ognuna va verificata sui propri fondi, perche'
+# l'interfaccia puo' cambiare variante e tema a caldo.
+TEMI = {
+    "moderna scuro": theme.MODERNA_SCURO,
+    "moderna chiaro": theme.MODERNA_CHIARO,
+    "retro": theme.RETRO,
+}
+
+
+def _fondi(tokens: dict) -> list[str]:
+    """I fondi su cui puo' capitare del testo in un tema."""
+    return [tokens["bg"], tokens["surface"], tokens["raised"], tokens["titlebar"]]
+
+
+def _componi(colore: str, base: str) -> str:
+    """Colore effettivo di un token rgba(...) sovrapposto a `base` (#RRGGBB).
+
+    Le pastiglie hanno un fondo semitrasparente: per misurarne il contrasto va
+    prima composto sul fondo pieno del riquadro che le ospita.
+    """
+    colore = colore.strip()
+    if colore.startswith("#"):
+        return colore
+    n = [int(x) for x in re.findall(r"\d+", colore)]
+    r, g, b = n[:3]
+    a = n[3] if len(n) > 3 else 255
+    br, bg, bb = (int(base[i:i + 2], 16) for i in (1, 3, 5))
+    mix = lambda f, k: round(f * (a / 255) + k * (1 - a / 255))  # noqa: E731
+    return f"#{mix(r, br):02X}{mix(g, bg):02X}{mix(b, bb):02X}"
 
 
 def luminanza(colore: str) -> float:
@@ -45,8 +72,8 @@ def contrasto(primo: str, secondo: str) -> float:
     return (max(a, b) + 0.05) / (min(a, b) + 0.05)
 
 
-def peggior_contrasto(colore: str) -> float:
-    return min(contrasto(colore, fondo) for fondo in FONDI)
+def peggior_contrasto(colore: str, fondi: list[str]) -> float:
+    return min(contrasto(colore, fondo) for fondo in fondi)
 
 
 # --- la funzione di misura stessa ------------------------------------------
@@ -64,63 +91,67 @@ def test_la_misura_del_contrasto_e_corretta(primo, secondo, atteso):
 # --- palette ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize("nome, colore", [
-    ("testo normale", "#A9B7C6"),
-    ("titolo", "#D4D4D4"),
-    ("sottotitolo", "#9FABB4"),
-    ("didascalia", "#A2ABB1"),
-])
-def test_il_testo_dell_interfaccia_e_leggibile(nome, colore):
-    assert peggior_contrasto(colore) >= AA_TESTO, (
-        f"{nome} ({colore}) sta a {peggior_contrasto(colore):.2f}:1, "
+@pytest.mark.parametrize("tema", list(TEMI))
+@pytest.mark.parametrize("chiave", ["text", "text2", "muted"])
+def test_il_testo_dell_interfaccia_e_leggibile(tema, chiave):
+    """Testo, testo secondario e didascalie restano a >=4.5:1 in ogni tema."""
+    tokens = TEMI[tema]
+    colore = tokens[chiave]
+    peggiore = peggior_contrasto(colore, _fondi(tokens))
+    assert peggiore >= AA_TESTO, (
+        f"{chiave} ({colore}) nel tema '{tema}' sta a {peggiore:.2f}:1, "
         f"sotto la soglia AA di {AA_TESTO}:1")
 
 
-def test_i_colori_delle_differenze_sono_leggibili():
-    """Erano a 2.64:1 e 3.18:1: leggibili da chi ci vede bene, molto meno
-    da tutti gli altri."""
-    from diffdb.results_tab import COLOR_MISMATCH, COLOR_MISSING_HERE, COLOR_ONLY_HERE
+@pytest.mark.parametrize("tema", list(TEMI))
+def test_i_colori_delle_differenze_sono_leggibili(tema):
+    """Erano a 2.64:1 e 3.18:1: le tre direzioni del diff ora passano AA sui
+    fondi dell'albero in ogni tema."""
+    tokens = TEMI[tema]
+    # L'albero dei risultati ha fondo 'code'/'surface' e righe alterne 'raised'.
+    fondi = [tokens["code"], tokens["surface"], tokens["raised"]]
+    for chiave in ("diff_manca_primo", "diff_solo_qui", "diff_diverso"):
+        assert peggior_contrasto(tokens[chiave], fondi) >= AA_TESTO, (
+            f"{chiave} ({tokens[chiave]}) nel tema '{tema}' sotto AA")
 
-    for colore in (COLOR_MISSING_HERE, COLOR_ONLY_HERE, COLOR_MISMATCH):
-        assert peggior_contrasto(colore.name().upper()) >= AA_TESTO
 
-
-def test_la_spunta_si_distingue_dal_fondo():
+@pytest.mark.parametrize("tema", list(TEMI))
+def test_la_spunta_si_distingue_dal_fondo(tema):
     """Un elemento di interfaccia deve staccare almeno 3:1, o non si vede
     se e' spuntato."""
-    verde_spunta = "#97B188"
-    assert min(contrasto(verde_spunta, f) for f in FONDI) >= AA_ELEMENTI
+    tokens = TEMI[tema]
+    assert peggior_contrasto(tokens["accent"], _fondi(tokens)) >= AA_ELEMENTI
 
 
-def test_lo_stylesheet_non_usa_piu_i_colori_bocciati():
+def test_gli_stylesheet_non_usano_i_colori_bocciati():
     """I colori vecchi non devono rientrare da una copia-incolla."""
-    qss = (RADICE / "diffdb" / "styles" / "style.qss").read_text(encoding="utf-8")
-    for bocciato in ("#7F8C94", "#6A8759", "#CC7832"):
-        assert bocciato not in qss, f"{bocciato} non passa il contrasto AA"
+    for foglio in ("moderna.qss", "retro.qss"):
+        qss = (RADICE / "diffdb" / "styles" / foglio).read_text(encoding="utf-8")
+        for bocciato in ("#7F8C94", "#6A8759", "#CC7832"):
+            assert bocciato not in qss, f"{bocciato} in {foglio} non passa il contrasto AA"
 
 
-def test_ogni_colore_dello_stylesheet_su_fondo_scuro_e_leggibile():
-    """Rete di sicurezza: pesca i colori di testo aggiunti in futuro."""
-    qss = (RADICE / "diffdb" / "styles" / "style.qss").read_text(encoding="utf-8")
-    colori = set(re.findall(r"^\s*color:\s*(#[0-9A-Fa-f]{6})\s*;", qss, re.MULTILINE))
-
-    # Fuori i colori usati su fondi propri (pastiglie, pulsante primario), che
-    # hanno il loro sfondo dichiarato accanto e sono verificati a parte.
-    su_fondo_proprio = {"#FFFFFF", "#A5C08C", "#E0B978", "#E08A7D", "#6A6A6A"}
-
-    for colore in colori - su_fondo_proprio:
-        assert peggior_contrasto(colore.upper()) >= AA_TESTO, (
-            f"{colore} nello stylesheet sta a {peggior_contrasto(colore.upper()):.2f}:1")
+@pytest.mark.parametrize("tema", list(TEMI))
+def test_ogni_colore_di_testo_del_tema_e_leggibile(tema):
+    """Rete di sicurezza: ogni colore di testo del tema stacca dai fondi."""
+    tokens = TEMI[tema]
+    for chiave in ("text", "text2", "muted", "accent", "accent_strong"):
+        peggiore = peggior_contrasto(tokens[chiave], _fondi(tokens))
+        assert peggiore >= AA_ELEMENTI, (
+            f"{chiave} ({tokens[chiave]}) nel tema '{tema}' sta a {peggiore:.2f}:1")
 
 
+@pytest.mark.parametrize("tema", list(TEMI))
 @pytest.mark.parametrize("testo, fondo", [
-    ("#A5C08C", "#33402D"),   # pastiglia buona
-    ("#E0B978", "#4A3B22"),   # pastiglia attenzione
-    ("#E08A7D", "#4A2A26"),   # pastiglia allarme
-    ("#FFFFFF", "#4B6EAF"),   # pulsante primario
+    ("plus", "plus_bg"),         # pastiglia buona
+    ("minus", "minus_bg"),       # pastiglia attenzione
+    ("error", "error_bg"),       # pastiglia allarme
 ])
-def test_le_pastiglie_sono_leggibili_sul_proprio_fondo(testo, fondo):
-    assert contrasto(testo, fondo) >= AA_TESTO
+def test_le_pastiglie_sono_leggibili_sul_proprio_fondo(tema, testo, fondo):
+    tokens = TEMI[tema]
+    sfondo = _componi(tokens[fondo], tokens["surface"])
+    assert contrasto(tokens[testo], sfondo) >= AA_TESTO, (
+        f"pastiglia {testo} nel tema '{tema}' su {sfondo} sotto AA")
 
 
 # --- il colore non e' l'unico canale ---------------------------------------

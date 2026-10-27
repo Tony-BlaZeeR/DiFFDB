@@ -14,6 +14,7 @@ import logging
 from diffdb.connections import Connection
 from diffdb.qt import Qt, QtGui, QtWidgets, Signal
 from diffdb.urls import descrizione
+from diffdb.widgets import Riquadro
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,11 @@ class ChooseTab(QtWidgets.QWidget):
     salva_snapshot = Signal()
     confronta_con_file = Signal()
     annulla_operazione = Signal()
+    riprova = Signal()
+    modifica_connessione = Signal()
+
+    # Indici delle pagine impilate.
+    PAGINA_SCELTA, PAGINA_AVANZAMENTO, PAGINA_ERRORE = range(3)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -32,7 +38,28 @@ class ChooseTab(QtWidgets.QWidget):
     # --- costruzione --------------------------------------------------------
 
     def _costruisci(self):
-        layout = QtWidgets.QVBoxLayout(self)
+        radice = QtWidgets.QVBoxLayout(self)
+        radice.setContentsMargins(0, 0, 0, 0)
+        self._stack = QtWidgets.QStackedWidget()
+        radice.addWidget(self._stack)
+
+        self._stack.addWidget(self._pagina_scelta())
+        self._stack.addWidget(self._pagina_avanzamento())
+        self._stack.addWidget(self._pagina_errore())
+
+        self._scorciatoie()
+        # L'ordine di tabulazione segue la lettura: riferimento, inverti,
+        # ambiente da allineare, confronta.
+        for prima, dopo in ((self.comboBox1, self.swap_button),
+                            (self.swap_button, self.comboBox2),
+                            (self.comboBox2, self.compare_button),
+                            (self.compare_button, self.save_snapshot_button),
+                            (self.save_snapshot_button, self.compare_file_button)):
+            QtWidgets.QWidget.setTabOrder(prima, dopo)
+
+    def _pagina_scelta(self) -> QtWidgets.QWidget:
+        pagina = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(pagina)
         layout.setContentsMargins(24, 20, 24, 16)
         layout.setSpacing(14)
 
@@ -72,16 +99,115 @@ class ChooseTab(QtWidgets.QWidget):
 
         layout.addWidget(self._separatore())
         layout.addLayout(self._riga_snapshot())
+        return pagina
 
-        self._scorciatoie()
-        # L'ordine di tabulazione segue la lettura: riferimento, inverti,
-        # ambiente da allineare, confronta.
-        for prima, dopo in ((self.comboBox1, self.swap_button),
-                            (self.swap_button, self.comboBox2),
-                            (self.comboBox2, self.compare_button),
-                            (self.compare_button, self.save_snapshot_button),
-                            (self.save_snapshot_button, self.compare_file_button)):
-            QtWidgets.QWidget.setTabOrder(prima, dopo)
+    # --- pagina Avanzamento -------------------------------------------------
+
+    def _pagina_avanzamento(self) -> QtWidgets.QWidget:
+        """Mostrata mentre il confronto gira: titolo, barra e testo di stato."""
+        pagina = QtWidgets.QWidget()
+        esterno = QtWidgets.QVBoxLayout(pagina)
+        esterno.addStretch()
+
+        card = Riquadro()
+        card.setMaximumWidth(560)
+        layout = QtWidgets.QVBoxLayout(card)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(14)
+
+        titolo = QtWidgets.QLabel(self.tr("Confronto in corso"))
+        titolo.setProperty("ruolo", "titolo")
+        layout.addWidget(titolo)
+
+        self.avanz_bar = QtWidgets.QProgressBar()
+        self.avanz_bar.setRange(0, 0)        # indeterminata: non sappiamo quanti oggetti
+        self.avanz_bar.setTextVisible(False)
+        self.avanz_bar.setFixedHeight(6)
+        layout.addWidget(self.avanz_bar)
+
+        self.avanz_label = QtWidgets.QLabel("")
+        self.avanz_label.setProperty("ruolo", "sottotitolo")
+        self.avanz_label.setWordWrap(True)
+        layout.addWidget(self.avanz_label)
+
+        riga = QtWidgets.QHBoxLayout()
+        riga.addStretch()
+        annulla = QtWidgets.QPushButton(self.tr("Annulla"))
+        annulla.clicked.connect(self.annulla_operazione)
+        riga.addWidget(annulla)
+        layout.addLayout(riga)
+
+        riga_card = QtWidgets.QHBoxLayout()
+        riga_card.addStretch()
+        riga_card.addWidget(card)
+        riga_card.addStretch()
+        esterno.addLayout(riga_card)
+        esterno.addStretch()
+        return pagina
+
+    # --- pagina Errore ------------------------------------------------------
+
+    def _pagina_errore(self) -> QtWidgets.QWidget:
+        """Mostrata quando il confronto fallisce: messaggio e azioni di recupero."""
+        pagina = QtWidgets.QWidget()
+        esterno = QtWidgets.QVBoxLayout(pagina)
+        esterno.addStretch()
+
+        card = Riquadro()
+        card.setObjectName("ErrorCard")
+        card.setMaximumWidth(560)
+        layout = QtWidgets.QVBoxLayout(card)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(12)
+
+        titolo = QtWidgets.QLabel(self.tr("Impossibile completare il confronto"))
+        titolo.setProperty("ruolo", "titolo")
+        layout.addWidget(titolo)
+
+        self.err_messaggio = QtWidgets.QLabel("")
+        self.err_messaggio.setWordWrap(True)
+        self.err_messaggio.setProperty("pastiglia", "allarme")
+        layout.addWidget(self.err_messaggio)
+
+        riga = QtWidgets.QHBoxLayout()
+        torna = QtWidgets.QPushButton(self.tr("Torna alla scelta"))
+        torna.clicked.connect(self.mostra_scelta)
+        modifica = QtWidgets.QPushButton(self.tr("Modifica connessione"))
+        modifica.clicked.connect(self.modifica_connessione)
+        riprova = QtWidgets.QPushButton(self.tr("Riprova"))
+        riprova.setProperty("ruolo", "primario")
+        riprova.clicked.connect(self.riprova)
+        riga.addWidget(torna)
+        riga.addStretch()
+        riga.addWidget(modifica)
+        riga.addWidget(riprova)
+        layout.addLayout(riga)
+
+        riga_card = QtWidgets.QHBoxLayout()
+        riga_card.addStretch()
+        riga_card.addWidget(card)
+        riga_card.addStretch()
+        esterno.addLayout(riga_card)
+        esterno.addStretch()
+        return pagina
+
+    # --- cambio pagina ------------------------------------------------------
+
+    def mostra_scelta(self):
+        self._stack.setCurrentIndex(self.PAGINA_SCELTA)
+
+    def mostra_avanzamento(self, testo: str = ""):
+        self.avanz_label.setText(testo or self.tr("Lettura della struttura in corso..."))
+        self._stack.setCurrentIndex(self.PAGINA_AVANZAMENTO)
+
+    def avanza(self, testo: str):
+        """Aggiorna sia lo stato compatto sia la pagina di avanzamento."""
+        self.status_label.setText(testo)
+        self.avanz_label.setText(testo)
+
+    def mostra_errore(self, messaggio: str):
+        self.err_messaggio.setText(messaggio)
+        self._stack.setCurrentIndex(self.PAGINA_ERRORE)
 
     def _scorciatoie(self):
         for sequenza, azione in (("Ctrl+Return", self._confronta_se_pronto),
@@ -96,8 +222,7 @@ class ChooseTab(QtWidgets.QWidget):
             self.confronta.emit()
 
     def _riquadro_ambienti(self) -> QtWidgets.QFrame:
-        riquadro = QtWidgets.QFrame()
-        riquadro.setProperty("ruolo", "riquadro")
+        riquadro = Riquadro(self.tr("Ambienti"))
         griglia = QtWidgets.QGridLayout(riquadro)
         griglia.setContentsMargins(18, 16, 18, 16)
         griglia.setHorizontalSpacing(18)

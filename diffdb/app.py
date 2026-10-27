@@ -9,7 +9,7 @@ import logging
 import sys
 
 import diffdb  # noqa: F401  (fissa il binding Qt prima di qualunque import di qtawesome/qtpy)
-from diffdb import i18n, log
+from diffdb import i18n, log, preferences, theme
 from diffdb.paths import resource_path
 from diffdb.qt import QtGui, QtWidgets
 
@@ -30,6 +30,10 @@ def main() -> int:
     # Prima di costruire qualunque widget: le stringhe si traducono quando
     # vengono create, non dopo.
     i18n.installa(app)
+
+    # Font e tavolozza prima dei widget: lo stile e' dell'applicazione, cosi'
+    # vale anche per le finestre di dialogo native.
+    theme.applica(app, preferences.variante(), preferences.tema(), preferences.accento())
     app.setWindowIcon(QtGui.QIcon(resource_path("images", "logo.png")))
 
     try:
