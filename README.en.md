@@ -314,11 +314,11 @@ only in a comment in the code:
 ←  missing in DEVELOPMENT      →  missing in STAGING      ≠  present in both but different
 ```
 
-**Contrast is measured, not estimated.** The theme colours meet WCAG AA (4.5:1 for
-text, 3:1 for interface elements) on *every* background they can land on, alternate
-rows included. `tests/test_accessibilita.py` computes the ratios and fails if any
-drops below the threshold — including colours added in the future, which are taken
-straight from the stylesheet.
+**Contrast is measured, not estimated.** The colours meet WCAG AA (4.5:1 for text,
+3:1 for interface elements) in **every theme** (Modern light/dark and Retro
+light/dark), on *every* background they can land on, alternate rows included.
+`tests/test_accessibilita.py` computes the ratios on the three palettes and fails
+if any drops below the threshold.
 
 **Keyboard.** Shortcuts are scoped to their tab: `Ctrl+S` in the connections tab
 exports nothing.
@@ -358,6 +358,19 @@ The interface and the messages the user sees are translated. Logs, the drivers'
 technical errors and the comments inside the generated SQL script stay in Italian:
 they are diagnostic artifacts, and changing them depending on who produced them
 would make them harder to compare.
+
+## Themes and colours
+
+The interface has **two variants**, each in **light and dark**, with the green
+"Retro" palette:
+
+- **Modern** — clean, dark-first, for everyday use;
+- **Retro** — terminal/TUI: blocky font, hard edges, titles engraved on the border.
+
+Variant and light/dark are switched on the fly from the buttons in the title bar.
+The **accent colour** is chosen from the *Configuration* tab (presets or a free
+picker): the shades are derived from the chosen colour, while the diff's semantic
+colours stay readable. Preferences are saved and restored on restart.
 
 ## Usage (GUI)
 
@@ -567,10 +580,12 @@ would not know which one to remove.
 | `diffdb/report.py` | Writing Excel and scripts (used by GUI and CLI) |
 | `diffdb/worker.py` | Comparison off the GUI thread |
 | `diffdb/qt.py` | Single point of access to Qt and loading of the `.ui` files |
+| `diffdb/theme.py` | Themes (tokens and palettes), font loading, runtime switching |
+| `diffdb/widgets.py` | Hand-drawn widgets: gradient wordmark, TUI frames |
 | `diffdb/connections.py`, `diffdb/paths.py` | Connections and paths (also from an executable) |
 | `diffdb/config/dialectConfig.py` | SQL templates and capabilities of each dialect |
 | `diffdb/utils/tableUtilities.py` | Comparison of two textual DDL files (standalone utility) |
-| `ui/`, `styles/`, `images/` | Qt Designer layouts, theme, icons |
+| `ui/`, `styles/`, `fonts/`, `images/` | Qt Designer layouts, themes (`moderna.qss`/`retro.qss`), fonts, icons |
 
 ## Contributing
 

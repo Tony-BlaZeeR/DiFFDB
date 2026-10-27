@@ -315,11 +315,11 @@ esisteva solo in un commento nel codice:
 ←  manca in SVILUPPO      →  manca in COLLAUDO      ≠  presente in entrambi ma diverso
 ```
 
-**Il contrasto e' misurato, non stimato.** I colori del tema rispettano WCAG AA
-(4.5:1 per il testo, 3:1 per gli elementi di interfaccia) su *tutti* i fondi su
-cui possono capitare, righe alternate comprese. `tests/test_accessibilita.py`
-calcola i rapporti e fallisce se qualcuno scende sotto la soglia — inclusi i
-colori aggiunti in futuro, che vengono pescati direttamente dallo stylesheet.
+**Il contrasto e' misurato, non stimato.** I colori rispettano WCAG AA (4.5:1 per
+il testo, 3:1 per gli elementi di interfaccia) in **ogni tema** (Moderna
+chiaro/scuro e Retro chiaro/scuro), su *tutti* i fondi su cui possono capitare,
+righe alternate comprese. `tests/test_accessibilita.py` calcola i rapporti sulle
+tre tavolozze e fallisce se qualcuno scende sotto la soglia.
 
 **Tastiera.** Le scorciatoie hanno la portata della loro scheda: `Ctrl+S` nella
 scheda delle connessioni non esporta niente.
@@ -360,6 +360,20 @@ Sono tradotti l'interfaccia e i messaggi che vede l'utente. Restano in italiano
 i log, gli errori tecnici dei driver e i commenti dentro lo script SQL generato:
 sono artefatti diagnostici, e cambiarli a seconda di chi li ha prodotti
 renderebbe piu' difficile confrontarli.
+
+## Temi e colori
+
+L'interfaccia ha **due varianti**, ognuna in **chiaro e scuro**, con la tavolozza
+verde "Retro":
+
+- **Moderna** — pulita, dark-first, per l'uso quotidiano;
+- **Retro** — terminale/TUI: font a blocchi, spigoli vivi, titoli incisi sul bordo.
+
+Variante e chiaro/scuro si cambiano al volo dai pulsanti nella barra del titolo.
+Il **colore dell'accento** si sceglie dalla scheda *Configurazione* (preset o
+selettore libero): le sfumature si derivano dal colore scelto, mentre i colori
+semantici del diff restano leggibili. Le preferenze sono salvate e si ritrovano
+al riavvio.
 
 ## Uso (GUI)
 
@@ -574,10 +588,12 @@ PostgreSQL non saprebbe quale togliere.
 | `diffdb/report.py` | Scrittura di Excel e script (usata da GUI e CLI) |
 | `diffdb/worker.py` | Confronto fuori dal thread della GUI |
 | `diffdb/qt.py` | Unico punto di accesso a Qt e caricamento dei file `.ui` |
+| `diffdb/theme.py` | Temi (token e tavolozze), caricamento font, cambio a runtime |
+| `diffdb/widgets.py` | Widget disegnati a mano: wordmark a gradiente, cornici TUI |
 | `diffdb/connections.py`, `diffdb/paths.py` | Connessioni e percorsi (anche da eseguibile) |
 | `diffdb/config/dialectConfig.py` | Template SQL e capacita' di ogni dialetto |
 | `diffdb/utils/tableUtilities.py` | Confronto di due file DDL testuali (utility a se') |
-| `ui/`, `styles/`, `images/` | Layout Qt Designer, tema scuro, icone |
+| `ui/`, `styles/`, `fonts/`, `images/` | Layout Qt Designer, temi (`moderna.qss`/`retro.qss`), font, icone |
 
 ## Contribuire
 
