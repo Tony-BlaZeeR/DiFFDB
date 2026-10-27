@@ -16,6 +16,7 @@ nel codice (le direzioni del diff nella scheda Risultati) si leggono da qui con
 from __future__ import annotations
 
 import logging
+import re
 
 from diffdb.paths import resource_path
 from diffdb.qt import QtGui, QtWidgets
@@ -157,11 +158,36 @@ def _tavolozza(variante: str, tema: str) -> dict:
     return _TAVOLOZZE.get((variante, tema)) or MODERNA_SCURO
 
 
-def _personalizza_accento(token: dict, retro: bool, chiaro: bool, accento: str) -> dict:
-    """Sostituisce la famiglia di token dell'accento con sfumature derivate dal
-    colore scelto, mantenendo neutri e colori semantici (ambra/rosso) invariati.
+def _ritinge(valore: str, h: float, sat: float) -> str:
+    """Riporta un token sulla tonalita' `h` con saturazione `sat`, **conservando
+    la luminosita'** originale: cosi' il fondo (o il bordo, o il testo) prende il
+    colore scelto ma i rapporti di contrasto restano quelli di partenza.
 
-    Le luminosita' sono fissate a bande leggibili: cosi' l'accento resta
+    Gestisce sia `#RRGGBB` sia `rgba(r,g,b,a)` (di cui conserva l'alpha).
+    """
+    valore = valore.strip()
+    if valore.startswith("rgba"):
+        n = [int(x) for x in re.findall(r"\d+", valore)]
+        r, g, b = n[:3]
+        a = n[3] if len(n) > 3 else 255
+        _hh, _ss, lum, _aa = QtGui.QColor(r, g, b).getHslF()
+        c = QtGui.QColor.fromHslF(h, min(1.0, sat), lum)
+        return f"rgba({c.red()},{c.green()},{c.blue()},{a})"
+    base = QtGui.QColor(valore)
+    if not base.isValid():
+        return valore
+    _hh, _ss, lum, _aa = base.getHslF()
+    return QtGui.QColor.fromHslF(h, min(1.0, sat), lum).name().upper()
+
+
+def _personalizza_accento(token: dict, retro: bool, chiaro: bool, accento: str) -> dict:
+    """Ricolora l'interfaccia sulla tonalita' scelta: non solo gli elementi
+    d'accento (tab, pulsanti, titoli) ma anche i **fondi, i bordi e i testi**, che
+    prendono la stessa tinta a parita' di luminosita'. I colori semantici del diff
+    (ambra/oro per le altre direzioni) restano invariati, per non perdere di
+    leggibilita'.
+
+    Le luminosita' dell'accento sono fissate a bande leggibili, cosi' resta
     distinguibile sui fondi qualunque colore scelga l'utente.
     """
     base = QtGui.QColor(accento)
@@ -194,6 +220,22 @@ def _personalizza_accento(token: dict, retro: bool, chiaro: bool, accento: str) 
     nuovo = dict(token)
     nuovo.update(accent=accent, accent_strong=strong, accent_tint=tint, accent_tint2=tint2,
                  logo_top=logo_top, logo_bottom=logo_bottom)
+
+    # Tinta anche i neutri (fondi, bordi, testi) sulla tonalita' scelta, con
+    # saturazione crescente dai fondi ai bordi. Nel tema chiaro i fondi sono
+    # quasi bianchi: li si tinge piu' leggeri, o diventano pastelli troppo carichi.
+    sat_fondo = 0.10 if chiaro else 0.16
+    for chiave in ("page", "bg", "titlebar", "surface", "raised", "code"):
+        nuovo[chiave] = _ritinge(token[chiave], h, sat_fondo)
+    for chiave in ("border", "border_strong"):
+        nuovo[chiave] = _ritinge(token[chiave], h, 0.24)
+    for chiave in ("divider", "row_rule", "hover"):
+        nuovo[chiave] = _ritinge(token[chiave], h, 0.30)
+    nuovo["text"] = _ritinge(token["text"], h, 0.10)
+    for chiave in ("text2", "muted", "disabled_text", "line_number"):
+        nuovo[chiave] = _ritinge(token[chiave], h, 0.22)
+    nuovo["sel_text"] = _ritinge(token["sel_text"], h, sat_fondo)
+
     # La selezione segue l'accento: traslucida nel moderno, piena nel retro.
     nuovo["sel_bg"] = strong if retro else tint2
     # "Presente nel riferimento" (pastiglia buona, direzione del diff) e' legato
