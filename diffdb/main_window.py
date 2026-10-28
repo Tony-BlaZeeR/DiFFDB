@@ -14,7 +14,7 @@ from diffdb.results_tab import ResultsTab
 from diffdb.rules import NESSUNA, RegoleNonValide, carica, cerca
 from diffdb.snapshot_io import SnapshotFile
 from diffdb.urls import mask_password, password_letterale, sanitize
-from diffdb.widgets import Riquadro, WordmarkGradiente
+from diffdb.widgets import Riquadro, WordmarkGradiente, logo_pixmap
 from diffdb.worker import CompareWorker, SnapshotWorker
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # anche per le finestre di dialogo native e si puo' cambiare a caldo.
 
         self.setWindowTitle("DiFFDB")
-        self.setWindowIcon(QtGui.QIcon(resource_path("images", "logo.png")))
+        self.setWindowIcon(QtGui.QIcon(resource_path("images", theme.logo_file())))
         _set_windows_taskbar_identity()
 
         self.create_custom_title_bar()
@@ -223,8 +223,8 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QHBoxLayout(title_bar)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        logo_label = QtWidgets.QLabel(title_bar)
-        logo_label.setPixmap(_logo(20))
+        self.logo_label = QtWidgets.QLabel(title_bar)
+        self.logo_label.setPixmap(_logo(20))
 
         self.title_wordmark = WordmarkGradiente("DiFFDB", 15, title_bar)
 
@@ -259,7 +259,7 @@ class MainWindow(QtWidgets.QMainWindow):
         close_button.setAccessibleName(self.tr("Chiudi la finestra"))
         close_button.clicked.connect(self.close)
 
-        layout.addWidget(logo_label)
+        layout.addWidget(self.logo_label)
         layout.addWidget(self.title_wordmark)
         layout.addStretch()
         layout.addWidget(self.variant_button)
@@ -354,8 +354,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._recolor_tab_icons()
         self.refresh_conn_table()          # le icone matita/cestino sono colorate a mano
         self.results_tab.aggiorna_tema()   # i colori delle direzioni del diff
-        self.home_tab.aggiorna_tema()      # il wordmark a gradiente
+        self.home_tab.aggiorna_tema()      # il wordmark a gradiente e il logo
         self.title_wordmark.imposta_tema()
+        self.logo_label.setPixmap(_logo(20))                    # pixel nel Retro
+        self.setWindowIcon(QtGui.QIcon(resource_path("images", theme.logo_file())))
         for riquadro in self.findChildren(Riquadro):   # titoli TUI e angoli
             riquadro.aggiorna_tema()
         self._aggiorna_scanline()
@@ -802,8 +804,8 @@ class _Scanline(QtWidgets.QWidget):
 
 
 def _logo(size: int) -> QtGui.QPixmap:
-    return QtGui.QPixmap(resource_path("images", "logo.png")).scaled(
-        size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    # Disegnato col gradiente del tema: segue variante (geom/pixel) e colore.
+    return logo_pixmap(size)
 
 
 def _set_windows_taskbar_identity():

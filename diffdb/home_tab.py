@@ -9,10 +9,9 @@ mie connessioni, da dove ricomincio — e ogni riga porta a un'azione.
 import logging
 
 from diffdb.connections import Connection, usa_portachiavi
-from diffdb.paths import resource_path
-from diffdb.qt import Qt, QtCore, QtGui, QtWidgets, Signal
+from diffdb.qt import Qt, QtCore, QtWidgets, Signal
 from diffdb.urls import password_letterale
-from diffdb.widgets import Riquadro, WordmarkGradiente
+from diffdb.widgets import Riquadro, WordmarkGradiente, logo_pixmap
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +41,8 @@ class HomeTab(QtWidgets.QWidget):
         riga = QtWidgets.QHBoxLayout()
         riga.setSpacing(14)
 
-        logo = QtWidgets.QLabel()
-        logo.setPixmap(QtGui.QPixmap(resource_path("images", "logo.png")).scaled(
-            56, 56, Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation))
+        self._logo_label = QtWidgets.QLabel()
+        self._aggiorna_logo()
 
         testi = QtWidgets.QVBoxLayout()
         testi.setSpacing(4)
@@ -59,9 +56,12 @@ class HomeTab(QtWidgets.QWidget):
         testi.addWidget(titolo)
         testi.addWidget(sottotitolo)
 
-        riga.addWidget(logo, 0, Qt.AlignmentFlag.AlignTop)
+        riga.addWidget(self._logo_label, 0, Qt.AlignmentFlag.AlignTop)
         riga.addLayout(testi, 1)
         return riga
+
+    def _aggiorna_logo(self):
+        self._logo_label.setPixmap(logo_pixmap(56))
 
     def _riquadro_ultimo_confronto(self) -> QtWidgets.QFrame:
         self.riquadro_ultimo = Riquadro(self.tr("Ultimo confronto"))
@@ -132,8 +132,9 @@ class HomeTab(QtWidgets.QWidget):
         self._mostra_connessioni(connessioni)
 
     def aggiorna_tema(self):
-        """Ridisegna il wordmark con i colori del nuovo tema."""
+        """Ridisegna wordmark e logo per il nuovo tema/variante."""
         self._wordmark.imposta_tema()
+        self._aggiorna_logo()
 
     def _mostra_ultimo(self, ultimo):
         self._ultimo = ultimo

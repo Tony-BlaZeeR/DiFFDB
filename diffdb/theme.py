@@ -283,6 +283,11 @@ def e_retro() -> bool:
     return _variante_corrente == VARIANTE_RETRO
 
 
+def logo_file() -> str:
+    """Il marchio da usare: pixel nel Retro, geometrico altrove."""
+    return "logo_retro.png" if _variante_corrente == VARIANTE_RETRO else "logo.png"
+
+
 def corrente() -> dict:
     return _corrente
 

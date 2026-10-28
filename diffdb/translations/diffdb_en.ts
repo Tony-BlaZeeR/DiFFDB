@@ -297,7 +297,7 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
 <context>
     <name>HomeTab</name>
     <message>
-        <location filename="../home_tab.py" line="55"/>
+        <location filename="../home_tab.py" line="52"/>
         <source>Confronta la struttura di due database e genera lo script per allinearli.</source>
         <translation>Compare the structure of two databases and generate the script to align them.</translation>
     </message>
@@ -329,37 +329,37 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
         <translation>Manage connections</translation>
     </message>
     <message>
-        <location filename="../home_tab.py" line="141"/>
+        <location filename="../home_tab.py" line="142"/>
         <source>Nessun confronto ancora eseguito.</source>
         <translation>No comparison run yet.</translation>
     </message>
     <message>
-        <location filename="../home_tab.py" line="149"/>
+        <location filename="../home_tab.py" line="150"/>
         <source>nessuna differenza</source>
         <translation>no differences</translation>
     </message>
     <message>
-        <location filename="../home_tab.py" line="150"/>
+        <location filename="../home_tab.py" line="151"/>
         <source>{0} differenze</source>
         <translation>{0} differences</translation>
     </message>
     <message>
-        <location filename="../home_tab.py" line="163"/>
+        <location filename="../home_tab.py" line="164"/>
         <source>{0} configurate</source>
         <translation>{0} configured</translation>
     </message>
     <message>
-        <location filename="../home_tab.py" line="164"/>
+        <location filename="../home_tab.py" line="165"/>
         <source>1 configurata</source>
         <translation>1 configured</translation>
     </message>
     <message>
-        <location filename="../home_tab.py" line="167"/>
+        <location filename="../home_tab.py" line="168"/>
         <source>{0} nel portachiavi</source>
         <translation>{0} in the keyring</translation>
     </message>
     <message>
-        <location filename="../home_tab.py" line="171"/>
+        <location filename="../home_tab.py" line="172"/>
         <source>{0} con password in chiaro</source>
         <translation>{0} with a plain-text password</translation>
     </message>
@@ -445,42 +445,42 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
         <translation>Restore</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="418"/>
+        <location filename="../main_window.py" line="420"/>
         <source>Home</source>
         <translation>Home</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="421"/>
+        <location filename="../main_window.py" line="423"/>
         <source>Configurazione</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="423"/>
+        <location filename="../main_window.py" line="425"/>
         <source>Scelta</source>
         <translation>Choose</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="426"/>
+        <location filename="../main_window.py" line="428"/>
         <source>Risultati</source>
         <translation>Results</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="487"/>
+        <location filename="../main_window.py" line="489"/>
         <source>Lingua:</source>
         <translation>Language:</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="543"/>
+        <location filename="../main_window.py" line="545"/>
         <source>Lingua</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="544"/>
+        <location filename="../main_window.py" line="546"/>
         <source>La nuova lingua sara&apos; attiva al prossimo avvio di DiFFDB.</source>
         <translation>The new language will take effect the next time DiFFDB starts.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="483"/>
+        <location filename="../main_window.py" line="485"/>
         <source>Preferenze</source>
         <translation>Preferences</translation>
     </message>
@@ -525,135 +525,135 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
         <translation>Interface colour</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="454"/>
+        <location filename="../main_window.py" line="456"/>
         <source>Aggiungi connessione</source>
         <translation>Add connection</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="459"/>
+        <location filename="../main_window.py" line="461"/>
         <source>Connessioni</source>
         <translation>Connections</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="501"/>
+        <location filename="../main_window.py" line="503"/>
         <source>Colore:</source>
         <translation>Colour:</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="506"/>
+        <location filename="../main_window.py" line="508"/>
         <source>Personalizza...</source>
         <translation>Customise…</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="512"/>
+        <location filename="../main_window.py" line="514"/>
         <source>Ripristina il colore predefinito</source>
         <translation>Reset to the default colour</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="560"/>
+        <location filename="../main_window.py" line="562"/>
         <source>Ambiente non trovato</source>
         <translation>Environment not found</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="561"/>
+        <location filename="../main_window.py" line="563"/>
         <source>La connessione &apos;{0}&apos; non esiste piu&apos;.</source>
         <translation>Connection &apos;{0}&apos; no longer exists.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="579"/>
+        <location filename="../main_window.py" line="581"/>
         <source>Connessioni mancanti</source>
         <translation>Missing connections</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="580"/>
+        <location filename="../main_window.py" line="582"/>
         <source>Configura almeno due connessioni nella scheda Configurazione.</source>
         <translation>Configure at least two connections in the Settings tab.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="584"/>
+        <location filename="../main_window.py" line="586"/>
         <source>Ambienti uguali</source>
         <translation>Same environment</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="585"/>
+        <location filename="../main_window.py" line="587"/>
         <source>Seleziona due ambienti diversi da confrontare.</source>
         <translation>Select two different environments to compare.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="588"/>
+        <location filename="../main_window.py" line="590"/>
         <source>Confronto in corso...</source>
         <translation>Comparing...</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="596"/>
-        <location filename="../main_window.py" line="621"/>
+        <location filename="../main_window.py" line="598"/>
+        <location filename="../main_window.py" line="623"/>
         <source>Nessun ambiente</source>
         <translation>No environment</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="597"/>
+        <location filename="../main_window.py" line="599"/>
         <source>Seleziona l&apos;ambiente da confrontare con lo snapshot.</source>
         <translation>Select the environment to compare with the snapshot.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="601"/>
+        <location filename="../main_window.py" line="603"/>
         <source>Snapshot da confrontare</source>
         <translation>Snapshot to compare</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="602"/>
-        <location filename="../main_window.py" line="628"/>
+        <location filename="../main_window.py" line="604"/>
+        <location filename="../main_window.py" line="630"/>
         <source>Snapshot DiFFDB (*.json)</source>
         <translation>DiFFDB snapshot (*.json)</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="609"/>
+        <location filename="../main_window.py" line="611"/>
         <source>Snapshot illeggibile</source>
         <translation>Unreadable snapshot</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="613"/>
+        <location filename="../main_window.py" line="615"/>
         <source>Confronto con lo snapshot in corso...</source>
         <translation>Comparing with the snapshot...</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="622"/>
+        <location filename="../main_window.py" line="624"/>
         <source>Seleziona l&apos;ambiente di cui salvare lo snapshot.</source>
         <translation>Select the environment to snapshot.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="627"/>
+        <location filename="../main_window.py" line="629"/>
         <source>Dove salvare lo snapshot</source>
         <translation>Where to save the snapshot</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="633"/>
+        <location filename="../main_window.py" line="635"/>
         <source>Lettura della struttura di {0}...</source>
         <translation>Reading the structure of {0}...</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="651"/>
+        <location filename="../main_window.py" line="653"/>
         <source>Nessuna differenza trovata.</source>
         <translation>No differences found.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="654"/>
+        <location filename="../main_window.py" line="656"/>
         <source>{0} differenze trovate.</source>
         <translation>{0} differences found.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="659"/>
+        <location filename="../main_window.py" line="661"/>
         <source>Snapshot salvato.</source>
         <translation>Snapshot saved.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="661"/>
+        <location filename="../main_window.py" line="663"/>
         <source>Snapshot salvato</source>
         <translation>Snapshot saved</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="661"/>
-        <location filename="../main_window.py" line="734"/>
+        <location filename="../main_window.py" line="663"/>
+        <location filename="../main_window.py" line="736"/>
         <source>Salvato in:
 {0}</source>
         <translation>Saved to:
@@ -668,58 +668,58 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
         <translation type="vanished">Connection error</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="690"/>
+        <location filename="../main_window.py" line="692"/>
         <source>Annullamento in corso...</source>
         <translation>Cancelling...</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="696"/>
+        <location filename="../main_window.py" line="698"/>
         <source>Operazione annullata.</source>
         <translation>Operation cancelled.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="717"/>
+        <location filename="../main_window.py" line="719"/>
         <source>Dove salvare i file</source>
         <translation>Where to save the files</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="730"/>
-        <location filename="../main_window.py" line="747"/>
+        <location filename="../main_window.py" line="732"/>
+        <location filename="../main_window.py" line="749"/>
         <source>Errore</source>
         <translation>Error</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="731"/>
+        <location filename="../main_window.py" line="733"/>
         <source>Impossibile scrivere il file: {0}</source>
         <translation>Cannot write the file: {0}</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="734"/>
+        <location filename="../main_window.py" line="736"/>
         <source>Excel esportato</source>
         <translation>Excel exported</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="748"/>
+        <location filename="../main_window.py" line="750"/>
         <source>Impossibile scrivere i file: {0}</source>
         <translation>Cannot write the files: {0}</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="752"/>
+        <location filename="../main_window.py" line="754"/>
         <source>Niente da generare</source>
         <translation>Nothing to generate</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="753"/>
+        <location filename="../main_window.py" line="755"/>
         <source>Le differenze selezionate non producono script (es. solo avvisi).</source>
         <translation>The selected differences produce no script (e.g. warnings only).</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="756"/>
+        <location filename="../main_window.py" line="758"/>
         <source>SQL esportato</source>
         <translation>SQL exported</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="757"/>
+        <location filename="../main_window.py" line="759"/>
         <source>File generati:
 {0}</source>
         <translation>Files generated:

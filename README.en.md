@@ -1,3 +1,5 @@
+<p align="center"><img src="diffdb/images/logo_badge.png" width="104" alt="DiFFDB"></p>
+
 # DiFFDB
 
 > 🇬🇧 English — [🇮🇹 Italiano](README.md)

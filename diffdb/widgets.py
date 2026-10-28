@@ -8,8 +8,55 @@
 
 from __future__ import annotations
 
+from PySide6.QtSvg import QSvgRenderer
+
 from diffdb import theme
-from diffdb.qt import Qt, QtGui, QtWidgets
+from diffdb.qt import Qt, QtCore, QtGui, QtWidgets
+
+# --- logo (il Delta a 3 strati, disegnato col gradiente del tema) ------------
+# Due stili dello stesso marchio: trapezi lisci (Moderna) o blocchi (Retro).
+_GEO_SLABS = ("M128,52 L158.8,112 L97.2,112 Z",
+              "M92.1,122 L163.9,122 L181.4,156 L74.6,156 Z",
+              "M69.5,166 L186.5,166 L204,200 L52,200 Z")
+_PIX_GRID = [
+    "       #       ", "      ###      ", "      ###      ", "               ",
+    "     #####     ", "     #####     ", "    #######    ", "               ",
+    "   #########   ", "   #########   ", "  ###########  ", " ############# ",
+    "###############",
+]
+_PIX_CELL = 12
+_PIX_X0 = (256 - len(_PIX_GRID[0]) * _PIX_CELL) // 2
+_PIX_Y0 = (256 - len(_PIX_GRID) * _PIX_CELL) // 2
+
+
+def _logo_svg() -> str:
+    token = theme.corrente()
+    top = token.get("logo_top", "#E4F3E9")
+    bottom = token.get("logo_bottom", "#2E5A44")
+    grad = (f'<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">'
+            f'<stop offset="0" stop-color="{top}"/>'
+            f'<stop offset="1" stop-color="{bottom}"/></linearGradient>')
+    if theme.e_retro():
+        shapes = "".join(
+            f'<rect x="{_PIX_X0+c*_PIX_CELL}" y="{_PIX_Y0+r*_PIX_CELL}" '
+            f'width="{_PIX_CELL}" height="{_PIX_CELL}" fill="#fff"/>'
+            for r, row in enumerate(_PIX_GRID) for c, ch in enumerate(row) if ch == "#")
+    else:
+        shapes = "".join(f'<path d="{s}" fill="#fff"/>' for s in _GEO_SLABS)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">'
+            f'<defs>{grad}<mask id="m">{shapes}</mask></defs>'
+            f'<rect x="0" y="0" width="256" height="256" fill="url(#g)" mask="url(#m)"/></svg>')
+
+
+def logo_pixmap(size: int) -> QtGui.QPixmap:
+    """Il logo renderizzato col gradiente del tema attivo (segue variante e colore)."""
+    renderer = QSvgRenderer(QtCore.QByteArray(_logo_svg().encode("utf-8")))
+    img = QtGui.QImage(size, size, QtGui.QImage.Format.Format_ARGB32)
+    img.fill(Qt.GlobalColor.transparent)
+    painter = QtGui.QPainter(img)
+    renderer.render(painter)
+    painter.end()
+    return QtGui.QPixmap.fromImage(img)
 
 
 class WordmarkGradiente(QtWidgets.QWidget):
