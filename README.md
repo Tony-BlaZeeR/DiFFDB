@@ -584,7 +584,7 @@ PostgreSQL non saprebbe quale togliere.
 | `diffdb/keystore.py` | Password nel portachiavi del sistema operativo |
 | `diffdb/log.py` | Logging su file, con le password mascherate |
 | `diffdb/i18n.py`, `diffdb/preferences.py` | Lingua dell'interfaccia e preferenze |
-| `i18n/`, `tools/traduzioni.py` | Cataloghi di traduzione e loro rigenerazione |
+| `diffdb/translations/`, `tools/traduzioni.py` | Cataloghi di traduzione e loro rigenerazione |
 | `diffdb/home_tab.py`, `diffdb/choose_tab.py` | Schermata iniziale e scelta degli ambienti |
 | `diffdb/results_tab.py` | Tab dei risultati: riepilogo, albero, filtro, export selettivo |
 | `diffdb/report.py` | Scrittura di Excel e script (usata da GUI e CLI) |
@@ -595,7 +595,7 @@ PostgreSQL non saprebbe quale togliere.
 | `diffdb/connections.py`, `diffdb/paths.py` | Connessioni e percorsi (anche da eseguibile) |
 | `diffdb/config/dialectConfig.py` | Template SQL e capacita' di ogni dialetto |
 | `diffdb/utils/tableUtilities.py` | Confronto di due file DDL testuali (utility a se') |
-| `ui/`, `styles/`, `fonts/`, `images/` | Layout Qt Designer, temi (`moderna.qss`/`retro.qss`), font, icone |
+| `diffdb/ui/`, `diffdb/styles/`, `diffdb/fonts/`, `diffdb/images/` | Layout Qt Designer, temi (`moderna.qss`/`retro.qss`), font, icone |
 
 ## Contribuire
 

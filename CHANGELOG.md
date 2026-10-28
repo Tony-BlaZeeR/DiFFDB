@@ -11,6 +11,27 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 
 ### Aggiunto
 
+- **Interfaccia ridisegnata, a due varianti.** *Moderna* (pulita, dark-first) e
+  *Retro* (terminale/TUI: font a blocchi, spigoli vivi, titoli incisi sul
+  bordo), ognuna in **chiaro e scuro**. Si cambiano a caldo dalla barra del
+  titolo e la scelta e' salvata in `diffdb.ini`. Lo stile vive in `theme.py`
+  (token) + due fogli QSS riempiti a runtime: la tavolozza sta in un posto
+  solo e l'applicazione non e' stata riscritta, perche' era gia' stilizzata per
+  proprieta' QSS.
+- **Colore dell'interfaccia scelto dall'utente** (preset o selettore libero):
+  non tinge solo i pulsanti ma **l'intero tema** — fondi, bordi, testi — a
+  parita' di luminosita', cosi' il contrasto resta WCAG AA qualunque colore si
+  scelga. I colori semantici del diff restano distinti.
+- **Schermate dedicate** per avanzamento, errore e "nessuna differenza", al
+  posto delle finestre di dialogo: la schermata d'errore mostra il messaggio
+  (mascherato) e le azioni per rimediare (riprova, modifica connessione).
+- **Nuovo logo**: un Delta a tre strati (la differenza, e i livelli di un
+  database), in due stili dello stesso marchio — trapezi lisci nella Moderna,
+  blocchi pixel nel Retro. Disegnato a runtime col gradiente del tema, quindi
+  segue variante e colore come il resto; piu' `logo.ico` multi-size per
+  finestra, taskbar ed eseguibile.
+- **README in inglese** (`README.en.md`), con selettore di lingua in testa a
+  entrambi.
 - **Vincoli CHECK** nel confronto: quarto tipo di vincolo dopo indici, foreign
   key e unique. Si confrontano per condizione normalizzata, non per nome — i
   nomi sono spesso autogenerati dal motore e cambiano da un ambiente

@@ -576,7 +576,7 @@ would not know which one to remove.
 | `diffdb/keystore.py` | Password in the operating-system keyring |
 | `diffdb/log.py` | File logging, with passwords masked |
 | `diffdb/i18n.py`, `diffdb/preferences.py` | Interface language and preferences |
-| `i18n/`, `tools/traduzioni.py` | Translation catalogs and their regeneration |
+| `diffdb/translations/`, `tools/traduzioni.py` | Translation catalogs and their regeneration |
 | `diffdb/home_tab.py`, `diffdb/choose_tab.py` | Home screen and environment selection |
 | `diffdb/results_tab.py` | Results tab: summary, tree, filter, selective export |
 | `diffdb/report.py` | Writing Excel and scripts (used by GUI and CLI) |
@@ -587,7 +587,7 @@ would not know which one to remove.
 | `diffdb/connections.py`, `diffdb/paths.py` | Connections and paths (also from an executable) |
 | `diffdb/config/dialectConfig.py` | SQL templates and capabilities of each dialect |
 | `diffdb/utils/tableUtilities.py` | Comparison of two textual DDL files (standalone utility) |
-| `ui/`, `styles/`, `fonts/`, `images/` | Qt Designer layouts, themes (`moderna.qss`/`retro.qss`), fonts, icons |
+| `diffdb/ui/`, `diffdb/styles/`, `diffdb/fonts/`, `diffdb/images/` | Qt Designer layouts, themes (`moderna.qss`/`retro.qss`), fonts, icons |
 
 ## Contributing
 
