@@ -212,3 +212,277 @@ def test_un_file_di_regole_rotto_non_impedisce_l_avvio(app, config):
         assert finestra.regole.vuote
     finally:
         finestra.close()
+
+
+# --- connessioni, confronto, export ----------------------------------------
+#
+# Flussi che prima non avevano test: la tabella delle connessioni, la
+# validazione del confronto e la scrittura dei file. Girano senza database e
+# senza thread — i worker e le finestre di dialogo native vengono sostituiti.
+
+
+@pytest.fixture
+def finestra(app, config):
+    from diffdb.main_window import MainWindow
+
+    win = MainWindow()
+    yield win
+    win.close()
+
+
+@pytest.fixture
+def box(monkeypatch):
+    """Intercetta i message box: nessun popup, ma si sa cosa e' stato mostrato."""
+    registro = {"warning": [], "information": [], "critical": []}
+
+    def falso(tipo, risposta=None):
+        def _finto(parent, titolo, testo, *a, **k):
+            registro[tipo].append((titolo, testo))
+            return risposta
+        return _finto
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "warning", falso("warning"))
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", falso("information"))
+    monkeypatch.setattr(QtWidgets.QMessageBox, "critical", falso("critical"))
+    return registro
+
+
+def _conn(nome, stringa="postgresql+psycopg2://app:${keyring}@host:5432/db", schema=None):
+    from diffdb.connections import Connection
+    return Connection(name=nome, conn_string=stringa, schema=schema)
+
+
+def test_aggiungi_connessione_compare_in_tabella(finestra, monkeypatch):
+    from diffdb import main_window
+    monkeypatch.setattr(main_window, "ask_connection", lambda *a, **k: _conn("SVI"))
+
+    prima = finestra.conn_table().rowCount()
+    finestra.add_connection()
+
+    assert finestra.connections[-1].name == "SVI"
+    assert finestra.conn_table().rowCount() == prima + 1
+
+
+def test_aggiungi_connessione_annullata_non_cambia_nulla(finestra, monkeypatch):
+    from diffdb import main_window
+    monkeypatch.setattr(main_window, "ask_connection", lambda *a, **k: None)
+
+    prima = len(finestra.connections)
+    finestra.add_connection()
+    assert len(finestra.connections) == prima
+
+
+def test_modifica_connessione_sostituisce_la_riga(finestra, monkeypatch):
+    from diffdb import main_window
+    finestra.connections = [_conn("SVI")]
+    finestra.refresh_conn_table()
+    monkeypatch.setattr(main_window, "ask_connection", lambda *a, **k: _conn("COLLAUDO"))
+
+    finestra.edit_connection(0)
+    assert finestra.connections[0].name == "COLLAUDO"
+
+
+def test_modifica_connessione_indice_fuori_scala_non_esplode(finestra):
+    finestra.connections = [_conn("SVI")]
+    finestra.edit_connection(9)          # niente eccezioni, niente cambi
+    assert finestra.connections[0].name == "SVI"
+
+
+def test_elimina_connessione_chiede_conferma(finestra, monkeypatch):
+    si = QtWidgets.QMessageBox.StandardButton.Yes
+    no = QtWidgets.QMessageBox.StandardButton.No
+    monkeypatch.setattr("diffdb.keystore.elimina", lambda nome: False)
+
+    finestra.connections = [_conn("SVI"), _conn("COLLAUDO")]
+    finestra.refresh_conn_table()
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *a, **k: no)
+    finestra.delete_connection(0)
+    assert [c.name for c in finestra.connections] == ["SVI", "COLLAUDO"]
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *a, **k: si)
+    finestra.delete_connection(0)
+    assert [c.name for c in finestra.connections] == ["COLLAUDO"]
+
+
+def test_la_pastiglia_dice_dove_sta_la_password(finestra):
+    casi = {
+        "postgresql://app:${keyring}@h/db": "buona",
+        "postgresql://app:segreta@h/db": "allarme",
+        "postgresql://app:${PROD_PWD}@h/db": "neutra",
+        "sqlite:///locale.db": "neutra",
+    }
+    for stringa, atteso in casi.items():
+        etichetta = finestra._pastiglia_password(_conn("X", stringa))
+        assert etichetta.property("pastiglia") == atteso
+
+
+def test_confronto_senza_due_connessioni_avverte(finestra, box):
+    finestra.connections = []
+    finestra.refresh_comboboxes()
+    finestra.start_comparison()
+    assert box["warning"]                      # un avviso, non un crash
+
+
+def test_confronto_tra_ambienti_uguali_avverte(finestra, box, monkeypatch):
+    # Due nomi diversi in lista ma, forzando la stessa scelta, stesso ambiente.
+    svi = _conn("SVI")
+    finestra.connections = [svi]
+    monkeypatch.setattr(finestra, "selected_connections", lambda: (svi, svi))
+    finestra.start_comparison()
+    assert box["warning"]
+
+
+def test_confronto_valido_parte_senza_toccare_il_db(finestra, monkeypatch):
+    lanciati = []
+    monkeypatch.setattr(finestra, "selected_connections", lambda: (_conn("A"), _conn("B")))
+    monkeypatch.setattr(finestra, "_run", lambda worker, on_fine: lanciati.append(worker))
+
+    finestra.start_comparison()
+    assert lanciati                            # e' stato avviato un worker
+    assert finestra.choose_tab._stack.currentIndex() == finestra.choose_tab.PAGINA_AVANZAMENTO
+
+
+def _diff(vuoto=True):
+    from diffdb.diff_DB import DiffResult
+    from diffdb.schema_snapshot import Snapshot
+    res = DiffResult(Snapshot("SVI", "sqlite"), Snapshot("COLLAUDO", "sqlite"))
+    if not vuoto:
+        from diffdb.diff_DB import Difference
+        res.tables.append(Difference(kind="table", name="T", change="mancante",
+                                     present_in="SVI", missing_in="COLLAUDO",
+                                     detail="manca"))
+    return res
+
+
+def test_confronto_concluso_senza_differenze(finestra):
+    from diffdb.main_window import TAB_RISULTATI
+    finestra.on_comparison_done(_diff(vuoto=True))
+    assert finestra.tabWidget.currentIndex() == TAB_RISULTATI
+    assert finestra.results_tab._stack.currentIndex() == 1   # pagina "nessuna differenza"
+    assert preferences.ultimo_confronto() is not None        # annotato per la Home
+
+
+def test_confronto_concluso_con_differenze(finestra):
+    finestra.on_comparison_done(_diff(vuoto=False))
+    assert "1" in finestra.choose_tab.status_label.text()
+
+
+def test_confronto_fallito_mostra_la_schermata_di_errore(finestra):
+    from diffdb.main_window import TAB_SCELTA
+    finestra.on_comparison_failed("ORA-12541: TNS:no listener")
+    assert finestra.tabWidget.currentIndex() == TAB_SCELTA
+    assert finestra.choose_tab._stack.currentIndex() == finestra.choose_tab.PAGINA_ERRORE
+    assert "ORA-12541" in finestra.choose_tab.err_messaggio.text()
+
+
+def test_snapshot_salvato_conferma(finestra, box):
+    finestra.on_snapshot_saved("/tmp/snap.json")
+    assert finestra.choose_tab._stack.currentIndex() == finestra.choose_tab.PAGINA_SCELTA
+    assert box["information"]
+
+
+def test_operazione_annullata_torna_alla_scelta(finestra):
+    finestra.on_annullato()
+    assert finestra.choose_tab._stack.currentIndex() == finestra.choose_tab.PAGINA_SCELTA
+    assert "annull" in finestra.choose_tab.status_label.text().lower()
+
+
+def test_modifica_db2_apre_la_connessione_da_allineare(finestra, monkeypatch):
+    from diffdb import main_window
+    from diffdb.main_window import TAB_CONFIGURAZIONE
+    finestra.connections = [_conn("SVI"), _conn("COLLAUDO")]
+    monkeypatch.setattr(finestra, "selected_connections",
+                        lambda: (_conn("SVI"), _conn("COLLAUDO")))
+    aperte = []
+    monkeypatch.setattr(main_window, "ask_connection",
+                        lambda parent, c=None: aperte.append(c) or None)
+
+    finestra._modifica_db2()
+    assert finestra.tabWidget.currentIndex() == TAB_CONFIGURAZIONE
+    assert aperte and aperte[0].name == "COLLAUDO"   # ha aperto proprio la seconda
+
+
+def test_ripeti_confronto_su_ambiente_sparito_avverte(finestra, box, monkeypatch):
+    from diffdb.main_window import TAB_SCELTA
+    finestra.connections = [_conn("SVI")]
+    finestra.refresh_comboboxes()
+    monkeypatch.setattr(finestra, "start_comparison", lambda: None)
+
+    finestra.ripeti_confronto("SVI", "NON_ESISTE")
+    assert box["warning"]
+    assert finestra.tabWidget.currentIndex() == TAB_SCELTA
+
+
+def test_export_excel_scrive_e_conferma(finestra, box, config, monkeypatch):
+    from diffdb import main_window
+    monkeypatch.setattr(finestra, "_ask_output_dir", lambda: str(config))
+    monkeypatch.setattr(main_window, "write_excel", lambda diff, d: f"{d}/diff.xlsx")
+
+    finestra.export_excel(_diff())
+    assert box["information"]
+
+
+def test_export_excel_annullato_non_scrive(finestra, box, monkeypatch):
+    from diffdb import main_window
+    monkeypatch.setattr(finestra, "_ask_output_dir", lambda: "")   # dialogo annullato
+    chiamato = []
+    monkeypatch.setattr(main_window, "write_excel", lambda *a: chiamato.append(1))
+
+    finestra.export_excel(_diff())
+    assert not chiamato and not box["information"]
+
+
+def test_export_excel_errore_mostra_critico(finestra, box, config, monkeypatch):
+    from diffdb import main_window
+    monkeypatch.setattr(finestra, "_ask_output_dir", lambda: str(config))
+
+    def esplode(diff, d):
+        raise OSError("disco pieno")
+    monkeypatch.setattr(main_window, "write_excel", esplode)
+
+    finestra.export_excel(_diff())
+    assert box["critical"]
+
+
+def test_export_sql_senza_script_lo_dice(finestra, box, config, monkeypatch):
+    from diffdb import main_window
+    monkeypatch.setattr(finestra, "_ask_output_dir", lambda: str(config))
+    monkeypatch.setattr(main_window, "write_sql", lambda diff, d, totali=None: [])
+
+    finestra.export_sql(_diff())
+    assert box["information"]
+    assert "generare" in box["information"][0][0].lower()   # il titolo lo dice
+
+
+def test_export_sql_scrive_i_file(finestra, box, config, monkeypatch):
+    from diffdb import main_window
+    monkeypatch.setattr(finestra, "_ask_output_dir", lambda: str(config))
+    monkeypatch.setattr(main_window, "write_sql",
+                        lambda diff, d, totali=None: [f"{d}/allinea.sql"])
+
+    finestra.export_sql(_diff())
+    assert box["information"]
+    assert "allinea.sql" in box["information"][0][1]
+
+
+def test_massimizza_cambia_il_simbolo(finestra):
+    finestra.showNormal()
+    testo = finestra.maximize_button.text()
+    finestra.toggle_maximized()
+    assert finestra.maximize_button.text() != testo
+    finestra.toggle_maximized()
+
+
+def test_le_scanline_compaiono_solo_nel_retro(finestra, app):
+    from diffdb import preferences, theme
+    preferences.imposta_variante(theme.VARIANTE_RETRO)
+    finestra._applica_tema()
+    # isVisible() e' False finche' la finestra non e' a schermo: conta isHidden().
+    assert finestra.scanline is not None and not finestra.scanline.isHidden()
+    finestra.scanline.resize(80, 40)
+    assert not finestra.scanline.grab().isNull()   # il paint delle righe non esplode
+
+    preferences.imposta_variante(theme.VARIANTE_MODERNA)
+    finestra._applica_tema()
+    assert finestra.scanline.isHidden()
