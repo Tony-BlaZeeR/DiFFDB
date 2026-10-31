@@ -202,8 +202,11 @@ jobs:
           import glob, sys, zipfile
 
           nomi = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
-          attesi = ["diffdb/ui/main_window.ui", "diffdb/styles/style.qss",
-                    "diffdb/images/logo.png", "diffdb/translations/diffdb_en.qm"]
+          attesi = ["diffdb/ui/main_window.ui",
+                    "diffdb/styles/moderna.qss", "diffdb/styles/retro.qss",
+                    "diffdb/images/logo.png", "diffdb/fonts/Inter.ttf",
+                    "diffdb/fonts/Silkscreen-Regular.ttf",
+                    "diffdb/translations/diffdb_en.qm"]
           mancanti = [a for a in attesi if a not in nomi]
           if mancanti:
               sys.exit("mancano dal wheel: " + ", ".join(mancanti))
