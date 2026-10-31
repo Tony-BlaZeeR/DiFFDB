@@ -55,7 +55,7 @@ diffdb = "diffdb.cli:main"
 diffdb-gui = "diffdb.app:main"
 
 [project.urls]
-Repository = "https://github.com/antoniobis98/DiFFDB"
+Repository = "https://github.com/Tony-BlaZeeR/DiFFDB"
 
 [tool.hatch.version]
 path = "diffdb/__init__.py"

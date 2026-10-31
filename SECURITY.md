@@ -3,7 +3,7 @@
 ## Segnalare una vulnerabilita'
 
 **Non aprire una issue pubblica.** Usa
-[Report a vulnerability](https://github.com/antoniobis98/DiFFDB/security/advisories/new)
+[Report a vulnerability](https://github.com/Tony-BlaZeeR/DiFFDB/security/advisories/new)
 su GitHub, che apre una segnalazione privata.
 
 Nella segnalazione servono: la versione di DiFFDB (`diffdb --help` la mostra, e
