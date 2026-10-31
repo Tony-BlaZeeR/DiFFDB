@@ -9,6 +9,8 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 
 ## [Non rilasciato]
 
+## [1.3.0] - 2026-10-31
+
 ### Aggiunto
 
 - **Interfaccia ridisegnata, a due varianti.** *Moderna* (pulita, dark-first) e
