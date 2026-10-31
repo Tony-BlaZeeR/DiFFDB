@@ -288,8 +288,12 @@ def _istruzioni(blocco: str):
 
     Un blocco puo' contenerne piu' d'una (DROP VIEW + CREATE VIEW) ed essere
     interamente un commento: DiFFDB usa i commenti per gli avvisi al posto del
-    SQL rischioso, e quelli non si eseguono. Il punto e virgola finale va tolto:
-    Oracle non lo accetta quando l'istruzione arriva dal driver.
+    SQL rischioso, e quelli non si eseguono.
+
+    Per le istruzioni semplici il punto e virgola finale va tolto: Oracle non lo
+    accetta quando l'istruzione arriva dal driver. Per un blocco PL/SQL e'
+    l'opposto: il ";" dopo END *fa parte* della sintassi del blocco, e toglierlo
+    crea un trigger/routine che compila INVALID (ORA-04098, PLS-00905 all'uso).
     """
     righe = [r for r in blocco.splitlines() if not r.strip().startswith("--")]
     testo = "\n".join(righe).strip()
@@ -302,14 +306,15 @@ def _istruzioni(blocco: str):
         resto = testo[trovato.start():]
         alter = ALTER_TRIGGER_STATO.search(resto)
         if alter:
-            yield resto[:alter.start()].strip().rstrip(";")
-            # Non si esegue: per un trigger appena creato (mai disabilitato)
-            # e' ridondante — CREATE TRIGGER lo lascia gia' abilitato — e
-            # forzare esplicitamente un ENABLE si e' visto costringere Oracle
+            # Il ";" dopo END resta: termina il blocco PL/SQL, non lo separa.
+            yield resto[:alter.start()].strip()
+            # L'ALTER TRIGGER ... ENABLE non si esegue: per un trigger appena
+            # creato (mai disabilitato) e' ridondante — CREATE TRIGGER lo lascia
+            # gia' abilitato — e forzare un ENABLE si e' visto costringere Oracle
             # a una ri-validazione che a volte fallisce (ORA-04098), scoperto
             # dalla CI. Non essenziale per verificare che il trigger funzioni.
         else:
-            yield resto.strip().rstrip(";")
+            yield resto.strip()
         return
 
     for pezzo in testo.split(";"):
