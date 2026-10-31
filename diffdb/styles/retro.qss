@@ -1,4 +1,4 @@
-/* DiFFDB - Variante RETRO "Retro" (template).
+/* DiFFDB - Variante RETRO (template).
    Terminale/TUI: verde su nero, spigoli vivi (border-radius 0), monospace,
    ambra come unico accento caldo. Graffe QSS raddoppiate per format_map. */
 

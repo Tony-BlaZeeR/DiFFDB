@@ -365,8 +365,8 @@ renderebbe piu' difficile confrontarli.
 
 ## Temi e colori
 
-L'interfaccia ha **due varianti**, ognuna in **chiaro e scuro**, con la tavolozza
-verde "Retro":
+L'interfaccia ha **due varianti**, ognuna in **chiaro e scuro**, con una tavolozza
+verde:
 
 - **Moderna** — pulita, dark-first, per l'uso quotidiano;
 - **Retro** — terminale/TUI: font a blocchi, spigoli vivi, titoli incisi sul bordo.

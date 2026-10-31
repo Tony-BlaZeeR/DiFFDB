@@ -363,8 +363,8 @@ would make them harder to compare.
 
 ## Themes and colours
 
-The interface has **two variants**, each in **light and dark**, with the green
-"Retro" palette:
+The interface has **two variants**, each in **light and dark**, with a green
+palette:
 
 - **Modern** — clean, dark-first, for everyday use;
 - **Retro** — terminal/TUI: blocky font, hard edges, titles engraved on the border.

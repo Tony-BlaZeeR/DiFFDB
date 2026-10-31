@@ -43,7 +43,7 @@ FONTS_MODERNA = {"font_ui": "Inter", "font_mono": "JetBrains Mono", "font_logo":
 FONTS_RETRO = {"font_ui": "IBM Plex Mono", "font_mono": "IBM Plex Mono", "font_logo": "Silkscreen"}
 
 # --- tavolozze -----------------------------------------------------------------
-# Alpha in 0-255 come vuole rgba() di QSS. Derivata dal logo pixel di Retro:
+# Alpha in 0-255 come vuole rgba() di QSS. Derivata dal logo:
 # menta chiaro in alto, teal profondo in basso, su nero verdastro.
 
 MODERNA_SCURO = {
