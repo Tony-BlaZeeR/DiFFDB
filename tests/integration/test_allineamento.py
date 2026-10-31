@@ -265,8 +265,12 @@ def _esegui(url, scripts, sezioni=SEZIONI_ALLINEAMENTO):
 # quando l'oggetto stesso non la usa. Vale per trigger, procedure e funzioni:
 # tutti hanno un corpo PL/SQL con punti e virgola interni che romperebbero lo
 # split per ";" delle altre sezioni.
+# DEFINER=`utente`@`host`: lo antepone MySQL in ogni SHOW CREATE di routine e
+# trigger, quindi CREATE e la parola chiave non sono adiacenti. I trigger MySQL
+# reggevano per caso (corpo senza ";" interno); le routine no.
 INIZIO_BLOCCO_PLSQL = re.compile(
-    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?"
+    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:DEFINER\s*=\s*\S+\s+)?"
+    r"(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?"
     r"(?:TRIGGER|PROCEDURE|FUNCTION)\b",
     re.IGNORECASE | re.MULTILINE)
 
