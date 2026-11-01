@@ -21,16 +21,12 @@ to align them. With a graphical interface and a CLI you can drop into a pipeline
 
 <p align="center"><em>The differences between two environments, grouped and colour-coded: what is missing and where, different types and constraints. Tick the entries and generate the SQL alignment script.</em></p>
 
-Two visual variants (Modern / Retro), light and dark themes, customizable accent
-colour:
+Two visual variants (Modern / Retro), light and dark themes, a customizable accent
+colour — switched live:
 
-<table>
-  <tr>
-    <td width="33%" valign="top"><img src="docs/images/results-light.png" alt="Modern variant, light theme"><br><sub>Modern &middot; light</sub></td>
-    <td width="33%" valign="top"><img src="docs/images/variant-retro.png" alt="Retro variant, dark theme"><br><sub>Retro &middot; dark</sub></td>
-    <td width="33%" valign="top"><img src="docs/images/connections.png" alt="Connection management"><br><sub>Connections (passwords in the OS keyring)</sub></td>
-  </tr>
-</table>
+<p align="center"><img src="docs/images/themes.gif" width="760" alt="The variant and theme combinations"></p>
+
+<p align="center"><img src="docs/images/connections.png" width="760" alt="Connection management"><br><sub>Connections: passwords live in the OS keyring, never in the file.</sub></p>
 
 ## What it detects
 

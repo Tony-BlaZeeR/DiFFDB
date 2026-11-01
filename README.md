@@ -22,15 +22,11 @@ allinearli. Con interfaccia grafica e con una CLI da mettere in pipeline.
 <p align="center"><em>Le differenze tra due ambienti, raggruppate e colorate: cosa manca e dove, tipi e vincoli diversi. Spunti le voci e generi lo script SQL di allineamento.</em></p>
 
 Due varianti grafiche (Moderna / Retro), tema chiaro e scuro, colore d'accento
-personalizzabile:
+personalizzabile — e cambiano a caldo:
 
-<table>
-  <tr>
-    <td width="33%" valign="top"><img src="docs/images/results-light.png" alt="Variante Moderna, tema chiaro"><br><sub>Moderna &middot; chiaro</sub></td>
-    <td width="33%" valign="top"><img src="docs/images/variant-retro.png" alt="Variante Retro, tema scuro"><br><sub>Retro &middot; scuro</sub></td>
-    <td width="33%" valign="top"><img src="docs/images/connections.png" alt="Gestione delle connessioni"><br><sub>Connessioni (password nel portachiavi)</sub></td>
-  </tr>
-</table>
+<p align="center"><img src="docs/images/themes.gif" width="760" alt="Le combinazioni di variante e tema"></p>
+
+<p align="center"><img src="docs/images/connections.png" width="760" alt="Gestione delle connessioni"><br><sub>Connessioni: le password stanno nel portachiavi del sistema, mai nel file.</sub></p>
 
 ## Cosa rileva
 
