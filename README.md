@@ -280,7 +280,7 @@ quale versione di DiFFDB, e l'**impronta** dei due ambienti:
 -- Ambiente da allineare : PROD (oracle, schema APP)
 -- Allineato a           : PRE
 -- Generato il           : 2026-08-06T10:55:20+00:00
--- Generato da           : antonio@PC-ANTONIO
+-- Generato da           : utente@host
 -- Impronta di PRE  : sha256:4e093e11...
 -- Impronta di PROD : sha256:bc78f2ca...
 ```
