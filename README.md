@@ -1,5 +1,12 @@
 <p align="center"><img src="diffdb/images/logo_badge.png" width="104" alt="DiFFDB"></p>
 
+<p align="center">
+  <a href="https://github.com/Tony-BlaZeeR/DiFFDB/actions/workflows/ci.yml"><img src="https://github.com/Tony-BlaZeeR/DiFFDB/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/PySide6-6.8-41cd52" alt="PySide6">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="Licenza MIT">
+</p>
+
 # DiFFDB
 
 > 🇮🇹 Italiano — [🇬🇧 English](README.en.md)
@@ -7,6 +14,23 @@
 Confronta la **struttura** di due database che dovrebbero avere lo stesso schema
 (sviluppo, collaudo, produzione), mostra le differenze e genera lo script SQL per
 allinearli. Con interfaccia grafica e con una CLI da mettere in pipeline.
+
+## Schermate
+
+<p align="center"><img src="docs/images/results.png" width="840" alt="Scheda Risultati: le differenze tra PRE e PROD"></p>
+
+<p align="center"><em>Le differenze tra due ambienti, raggruppate e colorate: cosa manca e dove, tipi e vincoli diversi. Spunti le voci e generi lo script SQL di allineamento.</em></p>
+
+Due varianti grafiche (Moderna / Retro), tema chiaro e scuro, colore d'accento
+personalizzabile:
+
+<table>
+  <tr>
+    <td width="33%" valign="top"><img src="docs/images/results-light.png" alt="Variante Moderna, tema chiaro"><br><sub>Moderna &middot; chiaro</sub></td>
+    <td width="33%" valign="top"><img src="docs/images/variant-retro.png" alt="Variante Retro, tema scuro"><br><sub>Retro &middot; scuro</sub></td>
+    <td width="33%" valign="top"><img src="docs/images/connections.png" alt="Gestione delle connessioni"><br><sub>Connessioni (password nel portachiavi)</sub></td>
+  </tr>
+</table>
 
 ## Cosa rileva
 
