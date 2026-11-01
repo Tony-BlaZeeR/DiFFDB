@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Permesso minimo di default: i job leggono soltanto. Chi ha bisogno di piu'
+# (la release) lo alza esplicitamente nel proprio blocco permissions.
+permissions:
+  contents: read
+
 jobs:
   qualita:
     name: Lint e sicurezza delle dipendenze
