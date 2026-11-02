@@ -34,10 +34,11 @@ SIMBOLO_DIVERSO = "≠"
 
 
 class ResultsTab(QtWidgets.QWidget):
-    def __init__(self, on_export_excel=None, on_export_sql=None, parent=None):
+    def __init__(self, on_export_excel=None, on_export_sql=None, on_accept=None, parent=None):
         super().__init__(parent)
         self._on_export_excel = on_export_excel
         self._on_export_sql = on_export_sql
+        self._on_accept = on_accept
         self._diff = None
         self._build_ui()
 
@@ -121,6 +122,12 @@ class ResultsTab(QtWidgets.QWidget):
         layout.addWidget(self.tree)
 
         bottom = QtWidgets.QHBoxLayout()
+        self.accept_button = QtWidgets.QPushButton(self.tr("Accetta selezionate"))
+        self.accept_button.setToolTip(self.tr(
+            "Segna le differenze spuntate come note e volute: non verranno piu' "
+            "mostrate nei prossimi confronti, finche' non cambiano."))
+        self.accept_button.clicked.connect(self._accept)
+        bottom.addWidget(self.accept_button)
         bottom.addStretch()
         self.export_excel_button = QtWidgets.QPushButton(self.tr("Esporta Excel (tutto)"))
         self.export_excel_button.clicked.connect(self._export_excel)
@@ -383,6 +390,16 @@ class ResultsTab(QtWidgets.QWidget):
 
     # --- export -----------------------------------------------------------
 
+    def _accept(self):
+        selected = self.checked_differences()
+        if not selected:
+            QtWidgets.QMessageBox.information(
+                self, self.tr("Niente da accettare"),
+                self.tr("Spunta almeno una differenza."))
+            return
+        if self._on_accept and self._diff is not None:
+            self._on_accept(selected)
+
     def _export_excel(self):
         if self._on_export_excel and self._diff is not None:
             self._on_export_excel(self._diff)
@@ -403,6 +420,7 @@ class ResultsTab(QtWidgets.QWidget):
     def _set_buttons_enabled(self, enabled: bool):
         self.export_excel_button.setEnabled(enabled)
         self.export_sql_button.setEnabled(enabled)
+        self.accept_button.setEnabled(enabled)
         self.select_all_button.setEnabled(enabled)
         self.select_none_button.setEnabled(enabled)
         self._update_sql_button_text()

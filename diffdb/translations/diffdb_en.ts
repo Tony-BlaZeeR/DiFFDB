@@ -484,312 +484,339 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
 <context>
     <name>MainWindow</name>
     <message>
-        <location filename="../main_window.py" line="120"/>
+        <location filename="../main_window.py" line="131"/>
         <source>Nome</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="121"/>
+        <location filename="../main_window.py" line="132"/>
         <source>Connessione</source>
         <translation>Connection</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="122"/>
+        <location filename="../main_window.py" line="133"/>
         <source>Password</source>
         <translation>Password</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="123"/>
+        <location filename="../main_window.py" line="134"/>
         <source>Schema</source>
         <translation>Schema</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="140"/>
+        <location filename="../main_window.py" line="151"/>
         <source>Modifica</source>
         <translation>Edit</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="148"/>
+        <location filename="../main_window.py" line="159"/>
         <source>Elimina</source>
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="168"/>
+        <location filename="../main_window.py" line="179"/>
         <source>portachiavi</source>
         <translation>keyring</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="170"/>
+        <location filename="../main_window.py" line="181"/>
         <source>in chiaro</source>
         <translation>plain text</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="172"/>
+        <location filename="../main_window.py" line="183"/>
         <source>variabile</source>
         <translation>variable</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="205"/>
+        <location filename="../main_window.py" line="216"/>
         <source>Elimina connessione</source>
         <translation>Delete connection</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="206"/>
+        <location filename="../main_window.py" line="217"/>
         <source>Eliminare la connessione &apos;{0}&apos;?</source>
         <translation>Delete connection &apos;{0}&apos;?</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="248"/>
-        <location filename="../main_window.py" line="249"/>
+        <location filename="../main_window.py" line="259"/>
+        <location filename="../main_window.py" line="260"/>
         <source>Riduci a icona</source>
         <translation>Minimise</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="254"/>
-        <location filename="../main_window.py" line="255"/>
-        <location filename="../main_window.py" line="290"/>
+        <location filename="../main_window.py" line="265"/>
+        <location filename="../main_window.py" line="266"/>
+        <location filename="../main_window.py" line="301"/>
         <source>Ingrandisci</source>
         <translation>Maximise</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="260"/>
+        <location filename="../main_window.py" line="271"/>
         <source>Chiudi</source>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="294"/>
+        <location filename="../main_window.py" line="305"/>
         <source>Ripristina</source>
         <translation>Restore</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="422"/>
+        <location filename="../main_window.py" line="434"/>
         <source>Home</source>
         <translation>Home</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="425"/>
+        <location filename="../main_window.py" line="437"/>
         <source>Configurazione</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="427"/>
+        <location filename="../main_window.py" line="439"/>
         <source>Scelta</source>
         <translation>Choose</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="430"/>
+        <location filename="../main_window.py" line="442"/>
         <source>Risultati</source>
         <translation>Results</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="492"/>
+        <location filename="../main_window.py" line="504"/>
         <source>Lingua:</source>
         <translation>Language:</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="548"/>
+        <location filename="../main_window.py" line="560"/>
         <source>Lingua</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="549"/>
+        <location filename="../main_window.py" line="561"/>
         <source>La nuova lingua sara&apos; attiva al prossimo avvio di DiFFDB.</source>
         <translation>The new language will take effect the next time DiFFDB starts.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="488"/>
+        <location filename="../main_window.py" line="500"/>
         <source>Preferenze</source>
         <translation>Preferences</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="142"/>
+        <location filename="../main_window.py" line="153"/>
         <source>Modifica la connessione {0}</source>
         <translation>Edit connection {0}</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="150"/>
+        <location filename="../main_window.py" line="161"/>
         <source>Elimina la connessione {0}</source>
         <translation>Delete connection {0}</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="236"/>
+        <location filename="../main_window.py" line="247"/>
         <source>Cambia aspetto (Moderna / Retro)</source>
         <translation>Switch look (Modern / Retro)</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="237"/>
+        <location filename="../main_window.py" line="248"/>
         <source>Cambia aspetto</source>
         <translation>Switch look</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="242"/>
+        <location filename="../main_window.py" line="253"/>
         <source>Tema chiaro / scuro</source>
         <translation>Light / dark theme</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="243"/>
+        <location filename="../main_window.py" line="254"/>
         <source>Tema chiaro o scuro</source>
         <translation>Light or dark theme</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="261"/>
+        <location filename="../main_window.py" line="272"/>
         <source>Chiudi la finestra</source>
         <translation>Close the window</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="342"/>
+        <location filename="../main_window.py" line="353"/>
         <source>Colore dell&apos;interfaccia</source>
         <translation>Interface colour</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="459"/>
+        <location filename="../main_window.py" line="471"/>
         <source>Aggiungi connessione</source>
         <translation>Add connection</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="464"/>
+        <location filename="../main_window.py" line="476"/>
         <source>Connessioni</source>
         <translation>Connections</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="506"/>
+        <location filename="../main_window.py" line="518"/>
         <source>Colore:</source>
         <translation>Colour:</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="511"/>
+        <location filename="../main_window.py" line="523"/>
         <source>Personalizza...</source>
         <translation>Customise…</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="517"/>
+        <location filename="../main_window.py" line="529"/>
         <source>Ripristina il colore predefinito</source>
         <translation>Reset to the default colour</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="565"/>
+        <location filename="../main_window.py" line="577"/>
         <source>Ambiente non trovato</source>
         <translation>Environment not found</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="566"/>
+        <location filename="../main_window.py" line="578"/>
         <source>La connessione &apos;{0}&apos; non esiste piu&apos;.</source>
         <translation>Connection &apos;{0}&apos; no longer exists.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="584"/>
+        <location filename="../main_window.py" line="596"/>
         <source>Connessioni mancanti</source>
         <translation>Missing connections</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="585"/>
+        <location filename="../main_window.py" line="597"/>
         <source>Configura almeno due connessioni nella scheda Configurazione.</source>
         <translation>Configure at least two connections in the Settings tab.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="589"/>
+        <location filename="../main_window.py" line="601"/>
         <source>Ambienti uguali</source>
         <translation>Same environment</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="590"/>
+        <location filename="../main_window.py" line="602"/>
         <source>Seleziona due ambienti diversi da confrontare.</source>
         <translation>Select two different environments to compare.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="593"/>
+        <location filename="../main_window.py" line="605"/>
         <source>Confronto in corso...</source>
         <translation>Comparing...</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="601"/>
-        <location filename="../main_window.py" line="626"/>
+        <location filename="../main_window.py" line="613"/>
+        <location filename="../main_window.py" line="638"/>
         <source>Nessun ambiente</source>
         <translation>No environment</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="602"/>
+        <location filename="../main_window.py" line="614"/>
         <source>Seleziona l&apos;ambiente da confrontare con lo snapshot.</source>
         <translation>Select the environment to compare with the snapshot.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="606"/>
+        <location filename="../main_window.py" line="618"/>
         <source>Snapshot da confrontare</source>
         <translation>Snapshot to compare</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="607"/>
-        <location filename="../main_window.py" line="633"/>
+        <location filename="../main_window.py" line="619"/>
+        <location filename="../main_window.py" line="645"/>
         <source>Snapshot DiFFDB (*.json)</source>
         <translation>DiFFDB snapshot (*.json)</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="614"/>
+        <location filename="../main_window.py" line="626"/>
         <source>Snapshot illeggibile</source>
         <translation>Unreadable snapshot</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="618"/>
+        <location filename="../main_window.py" line="630"/>
         <source>Confronto con lo snapshot in corso...</source>
         <translation>Comparing with the snapshot...</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="627"/>
+        <location filename="../main_window.py" line="639"/>
         <source>Seleziona l&apos;ambiente di cui salvare lo snapshot.</source>
         <translation>Select the environment to snapshot.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="632"/>
+        <location filename="../main_window.py" line="644"/>
         <source>Dove salvare lo snapshot</source>
         <translation>Where to save the snapshot</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="638"/>
+        <location filename="../main_window.py" line="650"/>
         <source>Lettura della struttura di {0}...</source>
         <translation>Reading the structure of {0}...</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="656"/>
+        <location filename="../main_window.py" line="671"/>
         <source>Nessuna differenza trovata.</source>
         <translation>No differences found.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="659"/>
+        <location filename="../main_window.py" line="674"/>
         <source>{0} differenze trovate.</source>
         <translation>{0} differences found.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="664"/>
+        <location filename="../main_window.py" line="679"/>
         <source>Snapshot salvato.</source>
         <translation>Snapshot saved.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="666"/>
+        <location filename="../main_window.py" line="681"/>
         <source>Snapshot salvato</source>
         <translation>Snapshot saved</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="666"/>
-        <location filename="../main_window.py" line="761"/>
+        <location filename="../main_window.py" line="681"/>
+        <location filename="../main_window.py" line="821"/>
         <source>Salvato in:
 {0}</source>
         <translation>Saved to:
 {0}</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="689"/>
+        <location filename="../main_window.py" line="704"/>
         <source>Filtri</source>
         <translation>Filters</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="690"/>
+        <location filename="../main_window.py" line="705"/>
         <source>Impossibile salvare i filtri in {0}: {1}</source>
         <translation>Could not save the filters to {0}: {1}</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="695"/>
+        <location filename="../main_window.py" line="710"/>
         <source>Filtri aggiornati: il prossimo confronto li applica.</source>
         <translation>Filters updated: the next comparison applies them.</translation>
+    </message>
+    <message>
+        <location filename="../main_window.py" line="724"/>
+        <location filename="../main_window.py" line="741"/>
+        <source>Accetta differenze</source>
+        <translation>Accept differences</translation>
+    </message>
+    <message>
+        <location filename="../main_window.py" line="727"/>
+        <source>Segnare {0} differenze come note e volute?
+
+Non verranno piu&apos; mostrate nei prossimi confronti, finche&apos; non cambiano. La scelta viene salvata in:
+{1}</source>
+        <translation>Mark {0} differences as known and wanted?
+
+They will no longer show in the next comparisons, until they change. The choice is saved in:
+{1}</translation>
+    </message>
+    <message>
+        <location filename="../main_window.py" line="742"/>
+        <source>Impossibile salvare in {0}: {1}</source>
+        <translation>Could not save to {0}: {1}</translation>
+    </message>
+    <message>
+        <location filename="../main_window.py" line="754"/>
+        <source>{0} differenze accettate: non verranno piu&apos; mostrate.</source>
+        <translation>{0} differences accepted: they will no longer be shown.</translation>
     </message>
     <message>
         <source>Operazione fallita.</source>
@@ -800,58 +827,58 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
         <translation type="vanished">Connection error</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="717"/>
+        <location filename="../main_window.py" line="777"/>
         <source>Annullamento in corso...</source>
         <translation>Cancelling...</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="723"/>
+        <location filename="../main_window.py" line="783"/>
         <source>Operazione annullata.</source>
         <translation>Operation cancelled.</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="744"/>
+        <location filename="../main_window.py" line="804"/>
         <source>Dove salvare i file</source>
         <translation>Where to save the files</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="757"/>
-        <location filename="../main_window.py" line="774"/>
+        <location filename="../main_window.py" line="817"/>
+        <location filename="../main_window.py" line="834"/>
         <source>Errore</source>
         <translation>Error</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="758"/>
+        <location filename="../main_window.py" line="818"/>
         <source>Impossibile scrivere il file: {0}</source>
         <translation>Cannot write the file: {0}</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="761"/>
+        <location filename="../main_window.py" line="821"/>
         <source>Excel esportato</source>
         <translation>Excel exported</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="775"/>
+        <location filename="../main_window.py" line="835"/>
         <source>Impossibile scrivere i file: {0}</source>
         <translation>Cannot write the files: {0}</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="779"/>
+        <location filename="../main_window.py" line="839"/>
         <source>Niente da generare</source>
         <translation>Nothing to generate</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="780"/>
+        <location filename="../main_window.py" line="840"/>
         <source>Le differenze selezionate non producono script (es. solo avvisi).</source>
         <translation>The selected differences produce no script (e.g. warnings only).</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="783"/>
+        <location filename="../main_window.py" line="843"/>
         <source>SQL esportato</source>
         <translation>SQL exported</translation>
     </message>
     <message>
-        <location filename="../main_window.py" line="784"/>
+        <location filename="../main_window.py" line="844"/>
         <source>File generati:
 {0}</source>
         <translation>Files generated:
@@ -861,148 +888,164 @@ To avoid this use the &apos;Password in keyring&apos; button, or write ${keyring
 <context>
     <name>ResultsTab</name>
     <message>
-        <location filename="../results_tab.py" line="172"/>
+        <location filename="../results_tab.py" line="179"/>
         <source>Nessun confronto ancora eseguito.</source>
         <translation>No comparison run yet.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="100"/>
+        <location filename="../results_tab.py" line="101"/>
         <source>Filtra per nome oggetto o colonna...</source>
         <translation>Filter by object or column name...</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="73"/>
+        <location filename="../results_tab.py" line="74"/>
         <source>Nessuna differenza</source>
         <translation>No differences</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="104"/>
+        <location filename="../results_tab.py" line="105"/>
         <source>Seleziona tutto</source>
         <translation>Select all</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="106"/>
+        <location filename="../results_tab.py" line="107"/>
         <source>Deseleziona</source>
         <translation>Clear selection</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="115"/>
+        <location filename="../results_tab.py" line="116"/>
         <source>Oggetto</source>
         <translation>Object</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="115"/>
+        <location filename="../results_tab.py" line="116"/>
         <source>Differenza</source>
         <translation>Difference</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="116"/>
+        <location filename="../results_tab.py" line="117"/>
         <source>Presente in</source>
         <translation>Present in</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="116"/>
+        <location filename="../results_tab.py" line="117"/>
         <source>Manca in</source>
         <translation>Missing in</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="117"/>
+        <location filename="../results_tab.py" line="118"/>
         <source>Dettaglio</source>
         <translation>Detail</translation>
     </message>
     <message>
         <location filename="../results_tab.py" line="125"/>
+        <source>Accetta selezionate</source>
+        <translation>Accept selected</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="128"/>
+        <source>Segna le differenze spuntate come note e volute: non verranno piu&apos; mostrate nei prossimi confronti, finche&apos; non cambiano.</source>
+        <translation>Mark the ticked differences as known and wanted: they will no longer show in the next comparisons, until they change.</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="132"/>
         <source>Esporta Excel (tutto)</source>
         <translation>Export Excel (all)</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="127"/>
+        <location filename="../results_tab.py" line="134"/>
         <source>Esporta SQL (selezionati)</source>
         <translation>Export SQL (selected)</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="142"/>
+        <location filename="../results_tab.py" line="149"/>
         <source>Vai al filtro</source>
         <translation>Go to the filter</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="159"/>
+        <location filename="../results_tab.py" line="166"/>
         <source>Riepilogo</source>
         <translation>Summary</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="198"/>
-        <location filename="../results_tab.py" line="199"/>
+        <location filename="../results_tab.py" line="205"/>
+        <location filename="../results_tab.py" line="206"/>
         <source>{0} manca in {1}</source>
         <translation>{0} missing in {1}</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="200"/>
+        <location filename="../results_tab.py" line="207"/>
         <source>{0} presente in entrambi ma diverso</source>
         <translation>{0} present in both but different</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="209"/>
+        <location filename="../results_tab.py" line="216"/>
         <source>{0} e {1} hanno la stessa struttura: nessuna differenza.</source>
         <translation>{0} and {1} have the same structure: no differences.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="213"/>
+        <location filename="../results_tab.py" line="220"/>
         <source>{0}  →  {1}. Spunta le voci da includere nello script SQL.</source>
         <translation>{0}  →  {1}. Tick the entries to include in the SQL script.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="234"/>
+        <location filename="../results_tab.py" line="241"/>
         <source>{0} e {1} hanno la stessa struttura: non c&apos;e&apos; niente da allineare.</source>
         <translation>{0} and {1} have the same structure: there is nothing to align.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="279"/>
+        <location filename="../results_tab.py" line="286"/>
         <source>Tabelle e colonne</source>
         <translation>Tables and columns</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="280"/>
+        <location filename="../results_tab.py" line="287"/>
         <source>Indici, chiavi e vincoli</source>
         <translation>Indexes, keys and constraints</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="281"/>
+        <location filename="../results_tab.py" line="288"/>
         <source>Viste</source>
         <translation>Views</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="282"/>
+        <location filename="../results_tab.py" line="289"/>
         <source>Sequenze</source>
         <translation>Sequences</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="283"/>
+        <location filename="../results_tab.py" line="290"/>
         <source>Sinonimi</source>
         <translation>Synonyms</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="284"/>
+        <location filename="../results_tab.py" line="291"/>
         <source>Trigger</source>
         <translation>Trigger</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="285"/>
+        <location filename="../results_tab.py" line="292"/>
         <source>Procedure e funzioni</source>
         <translation>Procedures and functions</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="394"/>
+        <location filename="../results_tab.py" line="397"/>
+        <source>Niente da accettare</source>
+        <translation>Nothing to accept</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="411"/>
         <source>Niente da esportare</source>
         <translation>Nothing to export</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="395"/>
+        <location filename="../results_tab.py" line="398"/>
+        <location filename="../results_tab.py" line="412"/>
         <source>Spunta almeno una differenza.</source>
         <translation>Tick at least one difference.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="412"/>
+        <location filename="../results_tab.py" line="430"/>
         <source>Esporta SQL ({0} selezionati)</source>
         <translation>Export SQL ({0} selected)</translation>
     </message>

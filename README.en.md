@@ -267,6 +267,11 @@ It is the same mechanism as a linter baseline, and it is what makes
 differences. Without it, the build is red from day one and after a week someone
 removes the check.
 
+From the GUI too: on the Results tab, tick the known differences and press
+**"Accept selected"**. They disappear from later comparisons (until they change)
+and the choice goes into the same `diffdb.rules.json`, so it also applies from the
+CLI and in a pipeline.
+
 `--no-rules` ignores the file and shows everything.
 
 **Filters are part of the fingerprint.** Two snapshots taken with different filters

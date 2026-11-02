@@ -268,6 +268,11 @@ E' lo stesso meccanismo della baseline di un linter, ed e' quello che rende
 differenze note. Senza, la build e' rossa dal primo giorno e dopo una settimana
 qualcuno toglie il controllo.
 
+Anche dalla GUI: nella scheda Risultati, spunta le differenze note e premi
+**«Accetta selezionate»**. Le voci spariscono dai confronti successivi (finche'
+non cambiano) e la scelta finisce nello stesso `diffdb.rules.json`, quindi vale
+anche da CLI e in pipeline.
+
 `--no-rules` ignora il file e mostra tutto.
 
 **I filtri fanno parte dell'impronta.** Due snapshot presi con filtri diversi

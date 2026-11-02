@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 
 import qtawesome as qta
@@ -6,13 +7,22 @@ from diffdb import i18n, keystore, preferences, theme
 from diffdb.choose_tab import ChooseTab
 from diffdb.connections import load_connections, save_connections, usa_portachiavi
 from diffdb.dialogs import ask_connection
+from diffdb.diff_DB import compare_snapshots
 from diffdb.filters_dialog import modifica_filtri as _chiedi_filtri
 from diffdb.home_tab import HomeTab
 from diffdb.paths import config_dir, resource_path
 from diffdb.qt import Qt, QtCore, QtGui, QtWidgets, bind_children, load_ui
 from diffdb.report import slug, write_excel, write_sql
 from diffdb.results_tab import ResultsTab
-from diffdb.rules import NESSUNA, NOME_PREDEFINITO, RegoleNonValide, carica, cerca, salva
+from diffdb.rules import (
+    NESSUNA,
+    NOME_PREDEFINITO,
+    RegoleNonValide,
+    carica,
+    cerca,
+    chiave,
+    salva,
+)
 from diffdb.snapshot_io import SnapshotFile
 from diffdb.urls import mask_password, password_letterale, sanitize
 from diffdb.widgets import Riquadro, WordmarkGradiente, logo_pixmap
@@ -40,6 +50,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.connections = []
         self.thread = None
         self.worker = None
+        self._ultimo_diff = None
         self.output_dir = preferences.cartella_output(str(config_dir()))
         self.regole = _carica_regole()
 
@@ -416,7 +427,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.home_tab = HomeTab()
         self.choose_tab = ChooseTab()
         self.results_tab = ResultsTab(
-            on_export_excel=self.export_excel, on_export_sql=self.export_sql)
+            on_export_excel=self.export_excel, on_export_sql=self.export_sql,
+            on_accept=self.accetta_differenze)
 
         self.tabWidget.insertTab(TAB_HOME, self.home_tab,
                                  qta.icon("fa5s.home", color=_icon_color()), self.tr("Home"))
@@ -641,6 +653,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_comparison_done(self, diff):
         self.cleanup_thread()
         self.choose_tab.mostra_scelta()
+        # Serve per ricalcolare in memoria dopo aver accettato delle differenze,
+        # senza rileggere i due ambienti dal vivo.
+        self._ultimo_diff = diff
 
         # Annotato per la schermata iniziale: e' la prima cosa che si cerca
         # riaprendo l'applicazione.
@@ -693,6 +708,51 @@ class MainWindow(QtWidgets.QMainWindow):
         self.choose_tab.imposta_riepilogo_filtri(self.regole.descrizione())
         self.choose_tab.imposta_stato(
             self.tr("Filtri aggiornati: il prossimo confronto li applica."))
+
+    def accetta_differenze(self, differenze):
+        """Aggiunge le differenze scelte alle 'accettate' e le nasconde.
+
+        E' la baseline tipo-linter: da qui in poi il confronto resta verde
+        finche' una di queste non cambia. Scrive nello stesso diffdb.rules.json
+        che leggono CLI e CI, cosi' la decisione vale anche in pipeline.
+        """
+        if not differenze or self._ultimo_diff is None:
+            return
+
+        percorso = config_dir() / NOME_PREDEFINITO
+        conferma = QtWidgets.QMessageBox.question(
+            self, self.tr("Accetta differenze"),
+            self.tr("Segnare {0} differenze come note e volute?\n\n"
+                    "Non verranno piu' mostrate nei prossimi confronti, finche' non "
+                    "cambiano. La scelta viene salvata in:\n{1}").format(
+                        len(differenze), percorso))
+        if conferma != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+
+        # Non si muta regole.accettate sul posto: NESSUNA e' un singleton
+        # condiviso da tutto il processo (vedi la CLI).
+        nuove_chiavi = {chiave(d) for d in differenze}
+        aggiornata = dataclasses.replace(
+            self.regole, accettate=self.regole.accettate | nuove_chiavi)
+        try:
+            salva(aggiornata, percorso)
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(
+                self, self.tr("Accetta differenze"),
+                self.tr("Impossibile salvare in {0}: {1}").format(percorso, exc))
+            return
+
+        self.regole = aggiornata
+        # Ricalcola dallo stesso snapshot: le accettate spariscono, senza
+        # ricollegarsi ai database.
+        nuovo = compare_snapshots(
+            self._ultimo_diff.snapshot1, self._ultimo_diff.snapshot2, self.regole)
+        self._ultimo_diff = nuovo
+        self.results_tab.show_result(nuovo)
+        self.choose_tab.imposta_riepilogo_filtri(self.regole.descrizione())
+        self.choose_tab.imposta_stato(
+            self.tr("{0} differenze accettate: non verranno piu' mostrate.").format(
+                len(differenze)))
 
     def _run(self, worker, on_finished):
         """Manda un worker su un thread suo. Uno alla volta: la GUI ne mostra uno solo."""
