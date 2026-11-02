@@ -229,10 +229,14 @@ jobs:
           path: dist/*
 
   build:
-    # Eseguibile portable per ogni sistema: PyInstaller non fa cross-compile.
-    if: startsWith(github.ref, 'refs/tags/')
+    # Eseguibile + installer per ogni sistema: PyInstaller non fa cross-compile.
+    # Gira sui tag (per la release) e su workflow_dispatch, per provare gli
+    # installer senza pubblicare niente: gli artifact restano, la release no.
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: [integration, integration-oracle, pacchetto]
     strategy:
+      # Un sistema che fallisce il packaging non deve annullare gli altri due.
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -242,6 +246,34 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
+
+      - name: Versione
+        shell: bash
+        run: |
+          # Dal tag (v1.3.0 -> 1.3.0) quando c'e', altrimenti da __init__.py:
+          # cosi' gli installer hanno un numero sensato anche su workflow_dispatch.
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            V="${{ github.ref_name }}"; V="${V#v}"
+          else
+            V=$(python -c "import re;print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', open('diffdb/__init__.py', encoding='utf-8').read()).group(1))")
+          fi
+          echo "DIFFDB_VERSION=$V" >> "$GITHUB_ENV"
+          echo "versione: $V"
+
+      - name: Icona .icns (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          set -euo pipefail
+          # PyInstaller su macOS vuole un .icns per il bundle: lo si costruisce
+          # dal PNG con gli strumenti di sistema (niente binario nel repo).
+          mkdir -p DiFFDB.iconset
+          for s in 16 32 64 128 256 512; do
+            sips -z $s $s diffdb/images/logo.png --out "DiFFDB.iconset/icon_${s}x${s}.png"
+            d=$((s * 2))
+            sips -z $d $d diffdb/images/logo.png --out "DiFFDB.iconset/icon_${s}x${s}@2x.png"
+          done
+          iconutil -c icns DiFFDB.iconset -o diffdb/images/logo.icns
+
       - run: pyinstaller DiFFDB.spec
 
       # --- firma -------------------------------------------------------------
@@ -275,6 +307,33 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
 
+      - name: Installer (Windows, Inno Setup)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # L'eseguibile e' gia' firmato (passo sopra): l'installer lo imbarca
+          # cosi' com'e'. iscc scrive dist\DiFFDB-Setup-<versione>.exe.
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DMyAppVersion=$env:DIFFDB_VERSION" "packaging\windows\DiFFDB.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC ha restituito $LASTEXITCODE" }
+          Get-ChildItem dist
+
+      - name: Firma installer (Windows)
+        if: matrix.os == 'windows-latest' && vars.AZURE_SIGNING_ACCOUNT != ''
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: dist
+          files-folder-filter: exe
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
       - name: Firma e notarizzazione (macOS)
         if: matrix.os == 'macos-latest' && vars.MACOS_SIGNING_IDENTITY != ''
         env:
@@ -297,32 +356,77 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k azione build.keychain
           rm certificato.p12
 
-          # Hardened runtime: senza, la notarizzazione viene rifiutata.
-          codesign --force --options runtime --timestamp --sign "$IDENTITA" dist/DiFFDB
+          # Hardened runtime: senza, la notarizzazione viene rifiutata. Si firma
+          # e notarizza il bundle .app (--deep per i binari Qt dentro).
+          codesign --deep --force --options runtime --timestamp --sign "$IDENTITA" dist/DiFFDB.app
 
-          # Si notarizza uno zip, poi il ticket si attacca all'eseguibile.
-          ditto -c -k --keepParent dist/DiFFDB dist/DiFFDB.zip
+          ditto -c -k --keepParent dist/DiFFDB.app dist/DiFFDB.zip
           xcrun notarytool submit dist/DiFFDB.zip --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
-          xcrun stapler staple dist/DiFFDB || true
+          xcrun stapler staple dist/DiFFDB.app || true
           rm dist/DiFFDB.zip
+
+      - name: DMG (macOS)
+        if: matrix.os == 'macos-latest'
+        env:
+          IDENTITA: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          dmg="dist/DiFFDB-${DIFFDB_VERSION}.dmg"
+          hdiutil create -volname "DiFFDB" -srcfolder "dist/DiFFDB.app" \
+            -ov -format UDZO "$dmg"
+          # Se la firma e' configurata, si notarizza e si incolla il ticket al dmg.
+          if [ -n "${IDENTITA:-}" ]; then
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+            xcrun stapler staple "$dmg" || true
+          fi
+          # Il binario nudo e il bundle non vanno distribuiti a parte: resta il dmg.
+          rm -rf dist/DiFFDB dist/DiFFDB.app
+
+      - name: AppImage (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          set -euo pipefail
+          appdir=DiFFDB.AppDir
+          mkdir -p "$appdir/usr/bin"
+          cp dist/DiFFDB "$appdir/usr/bin/DiFFDB"
+          cp packaging/linux/AppRun "$appdir/AppRun"
+          cp packaging/linux/DiFFDB.desktop "$appdir/DiFFDB.desktop"
+          cp diffdb/images/logo.png "$appdir/DiFFDB.png"
+          chmod +x "$appdir/AppRun" "$appdir/usr/bin/DiFFDB"
+          wget -qO appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+          # I runner non hanno FUSE: --appimage-extract-and-run lo evita.
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run \
+            "$appdir" "dist/DiFFDB-${DIFFDB_VERSION}-x86_64.AppImage"
+          # Il binario portabile resta, ma con un nome che non collide col macOS.
+          mv dist/DiFFDB "dist/DiFFDB-linux-x86_64"
+          ls -l dist
 
       - name: Impronte dei file
         shell: bash
         run: |
           cd dist
-          # Chi scarica deve poter verificare cosa ha scaricato.
-          if command -v sha256sum > /dev/null; then
-            sha256sum * > "SHA256SUMS-${{ matrix.os }}.txt"
-          else
-            shasum -a 256 * > "SHA256SUMS-${{ matrix.os }}.txt"
-          fi
+          # Chi scarica deve poter verificare cosa ha scaricato. Solo i file:
+          # su macOS un bundle .app e' una cartella e manderebbe in errore lo
+          # strumento di hash.
+          tool="sha256sum"
+          command -v sha256sum > /dev/null || tool="shasum -a 256"
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -print0 \
+            | xargs -0 $tool > "SHA256SUMS-${{ matrix.os }}.txt"
           cat "SHA256SUMS-${{ matrix.os }}.txt"
 
       - uses: actions/upload-artifact@v4
         with:
           name: DiFFDB-${{ matrix.os }}
-          path: dist/*
+          path: |
+            dist/*
+            !dist/DiFFDB.app
+            !dist/DiFFDB.iconset
 
   release:
     # Gli artifact scadono dopo 90 giorni: il link che dai a un collega smette

@@ -6,6 +6,7 @@
 # la copi su una chiavetta insieme al suo connections.json e funziona.
 
 import os
+import sys
 
 block_cipher = None
 
@@ -69,3 +70,22 @@ exe = EXE(
     console=False,  # niente finestra nera all'avvio
     icon=icon,
 )
+
+# Su macOS l'eseguibile nudo non basta: Finder e Gatekeeper si aspettano un
+# bundle .app. Si costruisce attorno allo stesso EXE, con l'icona .icns
+# (generata in CI dal PNG) quando c'e'. La versione per l'Info.plist arriva
+# dall'ambiente, cosi' combacia con quella del tag.
+if sys.platform == "darwin":
+    icns = "diffdb/images/logo.icns" if os.path.exists("diffdb/images/logo.icns") else None
+    app = BUNDLE(
+        exe,
+        name="DiFFDB.app",
+        icon=icns,
+        bundle_identifier="com.tony-blazeer.diffdb",
+        info_plist={
+            "CFBundleShortVersionString": os.environ.get("DIFFDB_VERSION", "0.0.0"),
+            "CFBundleVersion": os.environ.get("DIFFDB_VERSION", "0.0.0"),
+            "NSHighResolutionCapable": True,
+            "LSApplicationCategoryType": "public.app-category.developer-tools",
+        },
+    )

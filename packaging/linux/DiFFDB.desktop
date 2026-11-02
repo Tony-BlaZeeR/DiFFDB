@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DiFFDB
+GenericName=Database schema diff
+Comment=Confronta la struttura di due database e genera lo script di allineamento
+Exec=DiFFDB
+Icon=DiFFDB
+Terminal=false
+Categories=Development;Database;Utility;

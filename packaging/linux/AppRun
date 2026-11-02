@@ -1,0 +1,5 @@
+#!/bin/sh
+# Punto d'ingresso dell'AppImage: lancia l'eseguibile PyInstaller che sta
+# dentro l'AppDir, passando gli argomenti cosi' come arrivano.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/DiFFDB" "$@"
