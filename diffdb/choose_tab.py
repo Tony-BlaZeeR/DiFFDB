@@ -26,6 +26,7 @@ class ChooseTab(QtWidgets.QWidget):
     annulla_operazione = Signal()
     riprova = Signal()
     modifica_connessione = Signal()
+    modifica_filtri = Signal()
 
     # Indici delle pagine impilate.
     PAGINA_SCELTA, PAGINA_AVANZAMENTO, PAGINA_ERRORE = range(3)
@@ -68,6 +69,7 @@ class ChooseTab(QtWidgets.QWidget):
         layout.addWidget(titolo)
 
         layout.addWidget(self._riquadro_ambienti())
+        layout.addLayout(self._riga_filtri())
 
         self.compare_button = QtWidgets.QPushButton(self.tr("Confronta"))
         self.compare_button.setProperty("ruolo", "primario")
@@ -264,6 +266,31 @@ class ChooseTab(QtWidgets.QWidget):
         griglia.setColumnStretch(2, 1)
         return riquadro
 
+    def _riga_filtri(self) -> QtWidgets.QHBoxLayout:
+        """Pulsante per i filtri e, accanto, cosa e' attivo in questo momento.
+
+        Il riepilogo e' qui apposta: un filtro cambia i risultati in silenzio, e
+        senza vederlo si finisce per confrontare meta' schema senza accorgersene.
+        """
+        riga = QtWidgets.QHBoxLayout()
+        self.filtri_button = QtWidgets.QPushButton(self.tr("Filtri di confronto..."))
+        self.filtri_button.setToolTip(self.tr(
+            "Scegli quali tabelle e oggetti entrano nel confronto, per modello di nome."))
+        self.filtri_button.clicked.connect(self.modifica_filtri)
+
+        self.filtri_label = QtWidgets.QLabel("")
+        self.filtri_label.setProperty("ruolo", "didascalia")
+        self.filtri_label.setWordWrap(True)
+
+        riga.addWidget(self.filtri_button)
+        riga.addWidget(self.filtri_label, 1)
+        return riga
+
+    def imposta_riepilogo_filtri(self, testo: str):
+        """Mostra accanto al pulsante cosa filtrano le regole correnti."""
+        self.filtri_label.setText(
+            self.tr("Attivi: {0}").format(testo) if testo else self.tr("Nessun filtro"))
+
     def _riga_snapshot(self) -> QtWidgets.QHBoxLayout:
         riga = QtWidgets.QHBoxLayout()
         etichetta = QtWidgets.QLabel(self.tr("Snapshot:"))
@@ -359,7 +386,7 @@ class ChooseTab(QtWidgets.QWidget):
 
     def imposta_occupato(self, occupato: bool):
         for pulsante in (self.compare_button, self.save_snapshot_button,
-                         self.compare_file_button, self.swap_button):
+                         self.compare_file_button, self.swap_button, self.filtri_button):
             pulsante.setEnabled(not occupato)
         self.cancel_button.setVisible(occupato)
         if not occupato:

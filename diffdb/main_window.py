@@ -6,12 +6,13 @@ from diffdb import i18n, keystore, preferences, theme
 from diffdb.choose_tab import ChooseTab
 from diffdb.connections import load_connections, save_connections, usa_portachiavi
 from diffdb.dialogs import ask_connection
+from diffdb.filters_dialog import modifica_filtri as _chiedi_filtri
 from diffdb.home_tab import HomeTab
 from diffdb.paths import config_dir, resource_path
 from diffdb.qt import Qt, QtCore, QtGui, QtWidgets, bind_children, load_ui
 from diffdb.report import slug, write_excel, write_sql
 from diffdb.results_tab import ResultsTab
-from diffdb.rules import NESSUNA, RegoleNonValide, carica, cerca
+from diffdb.rules import NESSUNA, NOME_PREDEFINITO, RegoleNonValide, carica, cerca, salva
 from diffdb.snapshot_io import SnapshotFile
 from diffdb.urls import mask_password, password_letterale, sanitize
 from diffdb.widgets import Riquadro, WordmarkGradiente, logo_pixmap
@@ -70,6 +71,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.connections = load_connections()
         self.refresh_conn_table()
         self.refresh_comboboxes()
+        self.choose_tab.imposta_riepilogo_filtri(self.regole.descrizione())
 
         self.tabWidget.currentChanged.connect(self.on_tab_changed)
         self._scorciatoie_globali()
@@ -439,6 +441,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.choose_tab.confronta_con_file.connect(self.compare_with_snapshot_file)
         self.choose_tab.riprova.connect(self.start_comparison)
         self.choose_tab.modifica_connessione.connect(self._modifica_db2)
+        self.choose_tab.modifica_filtri.connect(self.modifica_filtri)
 
         self._sistema_intestazione_connessioni(tab_config)
         self._aggiungi_preferenze(tab_config)
@@ -668,6 +671,28 @@ class MainWindow(QtWidgets.QMainWindow):
         # prima di finire in una schermata che l'utente fotografa e allega a un ticket.
         self.choose_tab.mostra_errore(sanitize(message))
         self.tabWidget.setCurrentIndex(TAB_SCELTA)
+
+    def modifica_filtri(self):
+        """Apre l'editor dei filtri e, se si salva, li scrive accanto alla config.
+
+        Il file e' lo stesso che leggono CLI e CI: cosi' un filtro impostato dalla
+        GUI vale anche in pipeline, e resta versionabile con il resto.
+        """
+        nuove = _chiedi_filtri(self, self.regole)
+        if nuove is None:
+            return
+        percorso = config_dir() / NOME_PREDEFINITO
+        try:
+            salva(nuove, percorso)
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(
+                self, self.tr("Filtri"),
+                self.tr("Impossibile salvare i filtri in {0}: {1}").format(percorso, exc))
+            return
+        self.regole = nuove
+        self.choose_tab.imposta_riepilogo_filtri(self.regole.descrizione())
+        self.choose_tab.imposta_stato(
+            self.tr("Filtri aggiornati: il prossimo confronto li applica."))
 
     def _run(self, worker, on_finished):
         """Manda un worker su un thread suo. Uno alla volta: la GUI ne mostra uno solo."""

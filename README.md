@@ -245,6 +245,12 @@ dipendere da quale dei due si sta guardando.
 I filtri si applicano **prima** di leggere lo schema, quindi tolgono anche il
 tempo di riflettere quello che non guarderai.
 
+Dalla GUI non serve scrivere il JSON a mano: il pulsante **«Filtri di
+confronto…»** nella scheda *Scelta* apre un editor che compila e rilegge lo
+stesso `diffdb.rules.json` — così un filtro impostato dall'interfaccia (per es.
+*solo le tabelle* `*T_UTENTE*`) vale anche da CLI e in pipeline, e resta
+versionabile.
+
 ### Le differenze accettate
 
 Ci sono differenze note e volute: produzione ha un indice in piu' per le

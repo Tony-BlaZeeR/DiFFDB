@@ -245,6 +245,11 @@ are looking at.
 Filters are applied **before** reading the schema, so they also save the time to
 reflect what you will not look at.
 
+You don't have to write the JSON by hand: the **"Comparison filters…"** button
+on the *Choose* tab opens an editor that writes and reads back the same
+`diffdb.rules.json` — so a filter set from the interface (e.g. *only the tables*
+`*T_UTENTE*`) also applies from the CLI and in a pipeline, and stays versionable.
+
 ### Accepted differences
 
 There are known and wanted differences: production has an extra index for
