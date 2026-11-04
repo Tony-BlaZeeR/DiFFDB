@@ -25,6 +25,7 @@ SORGENTI = [
     "diffdb/main_window.py",
     "diffdb/dialogs.py",
     "diffdb/filters_dialog.py",
+    "diffdb/about_dialog.py",
     "diffdb/results_tab.py",
     "diffdb/choose_tab.py",
     "diffdb/home_tab.py",

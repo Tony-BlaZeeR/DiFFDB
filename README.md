@@ -123,6 +123,25 @@ confronto non si porta dietro Qt e pandas:
 Senza `report` il confronto funziona lo stesso: gli script SQL vengono scritti e
 l'Excel viene saltato con un avviso, invece di far fallire il comando.
 
+### Eseguibili e installer
+
+Ad ogni release GitHub, per ogni sistema, sono allegati sia un **installer** sia
+un eseguibile **portable** (firmati dove la firma e' configurata):
+
+| Sistema | Installer | Portable |
+| --- | --- | --- |
+| Windows | `DiFFDB-Setup-x.y.z.exe` | `DiFFDB.exe` |
+| macOS | `DiFFDB-x.y.z.dmg` | — |
+| Linux | `DiFFDB-x.y.z-x86_64.AppImage` | `DiFFDB-linux-x86_64` |
+
+Accanto c'e' lo `SHA256SUMS` per verificare il download.
+
+**Aggiornamenti.** Dal pulsante **ⓘ** in alto si controlla se c'e' una versione
+piu' nuova (apre la pagina delle release). Il controllo e' sempre su richiesta:
+DiFFDB non contatta la rete da solo, a meno di accendere *"Controlla
+aggiornamenti all'avvio"* — spento di default, perche' il programma gira anche
+su reti chiuse.
+
 ### Dai sorgenti
 
 ```sh

@@ -3,7 +3,8 @@ import logging
 
 import qtawesome as qta
 
-from diffdb import i18n, keystore, preferences, theme
+from diffdb import i18n, keystore, preferences, theme, updates
+from diffdb.about_dialog import mostra_info
 from diffdb.choose_tab import ChooseTab
 from diffdb.connections import load_connections, save_connections, usa_portachiavi
 from diffdb.dialogs import ask_connection
@@ -26,7 +27,7 @@ from diffdb.rules import (
 from diffdb.snapshot_io import SnapshotFile
 from diffdb.urls import mask_password, password_letterale, sanitize
 from diffdb.widgets import Riquadro, WordmarkGradiente, logo_pixmap
-from diffdb.worker import CompareWorker, SnapshotWorker
+from diffdb.worker import CompareWorker, SnapshotWorker, UpdateCheckWorker
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thread = None
         self.worker = None
         self._ultimo_diff = None
+        self._upd_thread = None
+        self._upd_worker = None
         self.output_dir = preferences.cartella_output(str(config_dir()))
         self.regole = _carica_regole()
 
@@ -92,6 +95,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for riquadro in self.findChildren(Riquadro):
             riquadro.aggiorna_tema()
         self._aggiorna_scanline()
+        self._controlla_aggiornamenti_avvio()
 
     def _scorciatoie_globali(self):
         """Ctrl+1..4 per le schede, F5 per rifare l'ultimo confronto.
@@ -241,6 +245,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.title_wordmark = WordmarkGradiente("DiFFDB", 15, title_bar)
 
+        # Informazioni e controllo aggiornamenti.
+        self.info_button = QtWidgets.QPushButton(title_bar)
+        self.info_button.setObjectName("infoButton")
+        self.info_button.setToolTip(self.tr("Informazioni e aggiornamenti"))
+        self.info_button.setAccessibleName(self.tr("Informazioni"))
+        self.info_button.clicked.connect(self._mostra_info)
+
         # Cambio aspetto: variante (Moderna/Retro) e, nella Moderna, chiaro/scuro.
         self.variant_button = QtWidgets.QPushButton(title_bar)
         self.variant_button.setObjectName("variantButton")
@@ -275,6 +286,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.logo_label)
         layout.addWidget(self.title_wordmark)
         layout.addStretch()
+        layout.addWidget(self.info_button)
         layout.addWidget(self.variant_button)
         layout.addWidget(self.theme_button)
         layout.addWidget(minimize_button)
@@ -376,6 +388,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._aggiorna_scanline()
 
     def _aggiorna_icone_tema(self):
+        self.info_button.setIcon(qta.icon("fa5s.info-circle", color=_icon_color()))
         retro = preferences.variante() == theme.VARIANTE_RETRO
         self.variant_button.setIcon(
             qta.icon("fa5s.desktop" if retro else "fa5s.terminal", color=_icon_color()))
@@ -390,6 +403,47 @@ class MainWindow(QtWidgets.QMainWindow):
                              (TAB_SCELTA, "fa5s.database"),
                              (TAB_RISULTATI, "fa5s.exchange-alt")):
             self.tabWidget.setTabIcon(indice, qta.icon(nome, color=_icon_color()))
+
+    # --- informazioni e aggiornamenti --------------------------------------
+
+    def _mostra_info(self):
+        mostra_info(self)
+
+    def _controlla_aggiornamenti_avvio(self):
+        """Controlla gli aggiornamenti all'avvio, ma solo se l'utente l'ha chiesto.
+
+        Spento di default: senza l'opzione, DiFFDB non contatta mai la rete da
+        solo (vedi updates.py). In silenzio se fallisce: all'avvio un problema
+        di rete non deve disturbare.
+        """
+        if not preferences.controlla_aggiornamenti_avvio():
+            return
+        self._upd_thread = QtCore.QThread(self)
+        self._upd_worker = UpdateCheckWorker()
+        self._upd_worker.moveToThread(self._upd_thread)
+        self._upd_thread.started.connect(self._upd_worker.run)
+        self._upd_worker.finished.connect(self._aggiornamento_trovato)
+        self._upd_worker.failed.connect(lambda _m: self._ferma_upd_thread())
+        self._upd_thread.start()
+
+    def _aggiornamento_trovato(self, tag):
+        self._ferma_upd_thread()
+        if not updates.e_piu_recente(tag):
+            return
+        risposta = QtWidgets.QMessageBox.question(
+            self, self.tr("Aggiornamento disponibile"),
+            self.tr("E' disponibile la versione {0}. Aprire la pagina per scaricarla?")
+            .format(tag))
+        if risposta == QtWidgets.QMessageBox.StandardButton.Yes:
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl(updates.PAGINA_RELEASE))
+
+    def _ferma_upd_thread(self):
+        thread = getattr(self, "_upd_thread", None)
+        if thread is not None:
+            thread.quit()
+            thread.wait()
+            self._upd_thread = None
+            self._upd_worker = None
 
     def _aggiorna_scanline(self):
         """Overlay a scanline, solo in variante Retro."""

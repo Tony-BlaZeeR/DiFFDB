@@ -106,3 +106,22 @@ class SnapshotWorker(QObject):
         except Exception as exc:
             logger.exception("Salvataggio dello snapshot fallito")
             self.failed.emit(sanitize(str(exc)))
+
+
+class UpdateCheckWorker(QObject):
+    """Chiede a GitHub l'ultima release senza bloccare la finestra.
+
+    Una chiamata di rete sul thread della GUI la congelerebbe finche' non
+    risponde (o va in timeout): va fatta a parte, come il test di connessione.
+    """
+
+    finished = Signal(str)   # tag dell'ultima release, es. 'v1.3.0'
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            from diffdb import updates
+            self.finished.emit(updates.ultima_release())
+        except Exception as exc:
+            logger.info("Controllo aggiornamenti fallito: %s", exc)
+            self.failed.emit(str(exc))

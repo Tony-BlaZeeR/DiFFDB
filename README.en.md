@@ -123,6 +123,24 @@ does not carry Qt and pandas along:
 Without `report` the comparison still works: the SQL scripts are written and the
 Excel is skipped with a warning, instead of failing the command.
 
+### Executables and installers
+
+Every GitHub release attaches, for each system, both an **installer** and a
+**portable** executable (signed where signing is configured):
+
+| System | Installer | Portable |
+| --- | --- | --- |
+| Windows | `DiFFDB-Setup-x.y.z.exe` | `DiFFDB.exe` |
+| macOS | `DiFFDB-x.y.z.dmg` | — |
+| Linux | `DiFFDB-x.y.z-x86_64.AppImage` | `DiFFDB-linux-x86_64` |
+
+Next to them is a `SHA256SUMS` file to verify the download.
+
+**Updates.** The **ⓘ** button at the top checks whether a newer version exists
+(it opens the releases page). The check is always on request: DiFFDB never
+contacts the network on its own, unless you turn on *"Check for updates at
+startup"* — off by default, because the program also runs on closed networks.
+
 ### From source
 
 ```sh

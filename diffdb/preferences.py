@@ -82,6 +82,22 @@ def imposta_accento(colore: str) -> None:
     impostazioni().setValue(CHIAVE_ACCENTO, colore)
 
 
+CHIAVE_AGGIORNAMENTI = "aggiornamenti/controlla_avvio"
+
+
+def controlla_aggiornamenti_avvio() -> bool:
+    """Se controllare la presenza di aggiornamenti all'avvio.
+
+    Spento di default: DiFFDB puo' girare su reti chiuse e fa confronti offline,
+    quindi non contatta la rete finche' l'utente non lo chiede esplicitamente.
+    """
+    return bool(impostazioni().value(CHIAVE_AGGIORNAMENTI, False, type=bool))
+
+
+def imposta_controlla_aggiornamenti_avvio(attivo: bool) -> None:
+    impostazioni().setValue(CHIAVE_AGGIORNAMENTI, bool(attivo))
+
+
 def geometria() -> dict | None:
     """Dimensione, posizione e stato della finestra, o None se non c'e' niente."""
     valori = impostazioni()
