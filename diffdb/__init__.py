@@ -1,6 +1,6 @@
 import os
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 # qtawesome passa da qtpy, che sceglie il binding Qt da solo: senza questa riga,
 # se sulla macchina c'e' ancora PyQt5, il processo caricherebbe due binding

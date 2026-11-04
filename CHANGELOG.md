@@ -9,6 +9,36 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 
 ## [Non rilasciato]
 
+## [1.4.0] - 2026-11-05
+
+### Aggiunto
+
+- **Editor dei filtri nella GUI** (scheda Scelta, pulsante *Filtri di
+  confronto…*): includi solo / escludi tabelle, viste, sequenze e sinonimi per
+  modello di nome, e spegni intere categorie. Scrive lo stesso
+  `diffdb.rules.json` di CLI e CI, quindi un filtro impostato dall'interfaccia
+  vale anche in pipeline. Prima i filtri si scrivevano solo a mano nel file.
+- **Accetta le differenze dalla GUI** (scheda Risultati, pulsante *Accetta
+  selezionate*): aggiunge le differenze note alla baseline, che da li' non
+  vengono piu' mostrate finche' non cambiano. E' il semaforo verde/rosso di
+  `--fail-on-diff`, ora raggiungibile senza passare dal terminale.
+- **Controllo aggiornamenti in-app** (pulsante *ⓘ*): dice se c'e' una versione
+  piu' nuova e apre la pagina delle release. Sempre su richiesta; l'opzione
+  *Controlla all'avvio* e' spenta di default, perche' il programma gira anche su
+  reti chiuse e non deve contattare la rete da solo.
+- **Installer per ogni sistema**, allegati a ogni release oltre agli eseguibili
+  portable: Windows (`DiFFDB-Setup-*.exe`, Inno Setup), macOS (`*.dmg`) e Linux
+  (`*.AppImage`), con lo `SHA256SUMS` per verificare il download.
+
+### Corretto
+
+- Le stringhe di connessione **senza il suffisso del driver** (`oracle://`,
+  `mysql://`, `mssql://`) ora usano il driver impacchettato (`oracledb`,
+  `pymysql`, `pymssql`) invece del default di SQLAlchemy (`cx_oracle`, `mysqldb`,
+  `pyodbc`), che non e' distribuito e faceva fallire il collegamento con "modulo
+  mancante". Solo `postgresql://` funzionava gia'. Vale anche per i sinonimi
+  (`cx_oracle` -> `oracledb`); le scelte esplicite valide si rispettano.
+
 ## [1.3.0] - 2026-10-31
 
 ### Aggiunto
