@@ -3,6 +3,10 @@ name: CI
 on:
   push:
     branches: [main, dev-dbDiff]
+    # Senza questo, un push di tag non fa partire il workflow, e i job build e
+    # release (pur condizionati sui tag) non verrebbero mai innescati: la
+    # release e gli installer si costruiscono proprio al tag di versione.
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
