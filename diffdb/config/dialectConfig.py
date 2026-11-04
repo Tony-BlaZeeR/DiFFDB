@@ -8,8 +8,8 @@ engines = {
     "sqlite": "sqlite:///{database}",
     "postgresql": "postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}",
     "mysql": "mysql+pymysql://{user}:{password}@{host}:{port}/{database}",
-    "mssql": "mssql+pyodbc://{user}:{password}@{host}/{database}?driver=SQL+Server",
-    "oracle": "oracle+cx_oracle://{user}:{password}@{host}:{port}/{database}",
+    "mssql": "mssql+pymssql://{user}:{password}@{host}:{port}/{database}",
+    "oracle": "oracle+oracledb://{user}:{password}@{host}:{port}/?service_name={database}",
 }
 
 # Alias accettati in input, normalizzati sui nomi dei dialetti SQLAlchemy.

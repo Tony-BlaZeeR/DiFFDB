@@ -435,12 +435,47 @@ QUERY_TIMEOUT_SESSION_SQL = {
 }
 
 
+# Driver impacchettati con DiFFDB, uno per backend. Se l'utente scrive la
+# stringa senza '+driver' (es. "oracle://..."), SQLAlchemy sceglierebbe il suo
+# default - cx_oracle per Oracle, mysqldb per MySQL, pyodbc per SQL Server - che
+# NON sono quelli distribuiti: il collegamento fallirebbe con "modulo mancante".
+# Si mette allora il driver giusto al posto di quello assente.
+DRIVER_IMPACCHETTATO = {
+    "postgresql": "psycopg2",
+    "mysql": "pymysql",
+    "oracle": "oracledb",
+    "mssql": "pymssql",
+}
+
+# Altri driver dello stesso backend con la stessa forma di URL: si possono
+# rimpiazzare senza toccare il resto della stringa.
+DRIVER_SINONIMI = {"cx_oracle": "oracledb", "mysqldb": "pymysql", "mysqlclient": "pymysql"}
+
+
+def normalizza_driver(url):
+    """Mette il driver impacchettato quando manca, o e' un sinonimo noto.
+
+    Se l'utente ha scelto esplicitamente un driver che c'e' (o pyodbc, che ha
+    una forma di URL diversa dalla pymssql), si rispetta la sua scelta.
+    """
+    backend = url.get_backend_name()
+    impacchettato = DRIVER_IMPACCHETTATO.get(backend)
+    if impacchettato is None:
+        return url   # sqlite o backend non gestito: niente da normalizzare
+    if "+" not in url.drivername:
+        return url.set(drivername=f"{backend}+{impacchettato}")
+    driver = url.drivername.split("+", 1)[1]
+    if driver in DRIVER_SINONIMI:
+        return url.set(drivername=f"{backend}+{DRIVER_SINONIMI[driver]}")
+    return url
+
+
 def crea_engine(conn_str: str, env_name: str | None = None,
                 secondi: int = SECONDI_CONNESSIONE,
                 secondi_query: int = SECONDI_QUERY):
     """Engine con timeout di connessione, di interrogazione, e controllo
     della connessione morta."""
-    url = make_url(expand(conn_str, name=env_name))
+    url = normalizza_driver(make_url(expand(conn_str, name=env_name)))
     driver = url.get_driver_name()
     connect_args = connect_args_per(url, secondi)
 

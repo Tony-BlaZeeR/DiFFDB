@@ -173,6 +173,11 @@ Il file **non e' versionato**: parti da `connections.json.example`.
 ]
 ```
 
+Il suffisso del driver (`+oracledb`, `+pymysql`, `+pymssql`, `+psycopg2`) e'
+**opzionale**: se scrivi solo `oracle://`, `mysql://`, `mssql://` o
+`postgresql://`, DiFFDB mette da solo il driver che impacchetta - cosi' non devi
+ricordarti il nome giusto. Indicarlo per esteso resta valido.
+
 Lo **schema** e' opzionale: su Oracle di solito coincide con l'utente, e serve
 quando l'utente di connessione vede piu' schemi.
 
