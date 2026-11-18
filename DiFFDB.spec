@@ -62,6 +62,24 @@ hiddenimports += [
 ]
 collected_binaries = crypto_binaries + oracle_binaries
 
+# PyQt5 va escluso esplicitamente: se resta installato sulla macchina,
+# PyInstaller lo impacchetterebbe accanto a PySide6 e i due binding Qt nello
+# stesso processo fanno crashare l'applicazione all'avvio.
+excludes = ["PyQt5", "tkinter", "matplotlib", "pytest"]
+
+# Su macOS pymssql va tolto, e non per scelta: il suo wheel si dichiara
+# universal2 e i suoi moduli lo sono, ma le OpenSSL che si porta dietro
+# (pymssql/.dylibs/libssl.3.dylib) sono solo x86_64. PyInstaller appiattisce
+# tutte le dylib nella radice del bundle, dove quel nome collide con la
+# libssl.3.dylib arm64 di psycopg2: vince quella x86_64 e rompe psycopg2, il
+# modulo ssl della stdlib e di conseguenza oracledb, che su ssl si appoggia.
+# Su macOS arm64 pymssql non riesce a caricarsi comunque, quindi togliendolo
+# si perde una cosa che non funzionava e si recuperano PostgreSQL e Oracle.
+# Da rivedere quando il wheel a monte spedira' OpenSSL arm64.
+if sys.platform == "darwin":
+    hiddenimports.remove("pymssql")
+    excludes.append("pymssql")
+
 a = Analysis(
     ["main.py"],
     pathex=[],
@@ -70,10 +88,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    # PyQt5 va escluso esplicitamente: se resta installato sulla macchina,
-    # PyInstaller lo impacchetterebbe accanto a PySide6 e i due binding Qt
-    # nello stesso processo fanno crashare l'applicazione all'avvio.
-    excludes=["PyQt5", "tkinter", "matplotlib", "pytest"],
+    excludes=excludes,
     cipher=block_cipher,
 )
 

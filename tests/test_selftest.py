@@ -8,6 +8,8 @@ eseguendo `--selftest` sul binario appena costruito (vedi ci.yml).
 
 from __future__ import annotations
 
+import sys
+
 import diffdb.selftest as selftest
 
 
@@ -39,6 +41,40 @@ def test_segnala_il_modulo_mancante(tmp_path, monkeypatch):
     report = (tmp_path / selftest.NOME_REPORT).read_text(encoding="utf-8")
     assert "modulo_che_non_esiste_davvero" in report
     assert "Autodiagnosi FALLITA" in report
+
+
+def test_su_macos_pymssql_e_saltato_non_bocciato(tmp_path, monkeypatch):
+    """Su macOS pymssql e' escluso dal bundle di proposito: la sua assenza
+    deve essere l'esito giusto, altrimenti la build macOS non passerebbe
+    mai."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(selftest, "MODULI", [("pymssql", "driver SQL Server")])
+
+    assert selftest.esegui() == 0
+
+    report = (tmp_path / selftest.NOME_REPORT).read_text(encoding="utf-8")
+    assert "salto" in report
+    assert "Autodiagnosi OK" in report
+
+
+def test_su_macos_un_driver_davvero_mancante_boccia(tmp_path, monkeypatch):
+    """L'eccezione per pymssql non deve diventare un'amnistia generale: su
+    macOS gli altri driver restano obbligatori."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(
+        selftest, "MODULI", [("modulo_che_non_esiste_davvero", "driver finto")]
+    )
+
+    assert selftest.esegui() == 1
+
+
+def test_pymssql_resta_atteso_fuori_da_macos(monkeypatch):
+    """Su Windows e Linux SQL Server e' supportato: niente deroghe."""
+    for piattaforma in ("win32", "linux"):
+        monkeypatch.setattr(sys, "platform", piattaforma)
+        assert "pymssql" not in selftest.NON_ATTESI.get(piattaforma, {})
 
 
 def test_copre_cryptography_e_oracle():

@@ -136,6 +136,12 @@ un eseguibile **portable** (firmati dove la firma e' configurata):
 
 Accanto c'e' lo `SHA256SUMS` per verificare il download.
 
+> **SQL Server non e' disponibile nel pacchetto macOS.** Il wheel di `pymssql`
+> si dichiara universal2 ma spedisce OpenSSL solo x86_64: dentro un'app arm64
+> non si carica, e la sua presenza rompeva anche PostgreSQL e Oracle. Su macOS
+> restano PostgreSQL, MySQL/MariaDB, Oracle e SQLite; per SQL Server usa
+> Windows o Linux, oppure installa con `pip install 'diffdb[mssql]'`.
+
 **Aggiornamenti.** Dal pulsante **ⓘ** in alto si controlla se c'e' una versione
 piu' nuova (apre la pagina delle release). Il controllo e' sempre su richiesta:
 DiFFDB non contatta la rete da solo, a meno di accendere *"Controlla

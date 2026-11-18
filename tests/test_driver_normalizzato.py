@@ -13,7 +13,11 @@ from sqlalchemy.engine import make_url
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from diffdb.schema_snapshot import crea_engine, normalizza_driver  # noqa: E402
+from diffdb.schema_snapshot import (  # noqa: E402
+    controlla_driver_disponibile,
+    crea_engine,
+    normalizza_driver,
+)
 
 
 @pytest.mark.parametrize("ingresso,atteso", [
@@ -58,3 +62,49 @@ def test_crea_engine_usa_il_driver_impacchettato(ingresso, driver):
         assert engine.url.get_driver_name() == driver
     finally:
         engine.dispose()
+
+
+# --- driver assente: l'utente deve capire cosa fare -------------------------
+#
+# Su macOS SQL Server non e' nel pacchetto (il wheel di pymssql spedisce
+# OpenSSL x86_64 e rompeva ssl, psycopg2 e oracledb): senza un messaggio
+# esplicito l'utente vedrebbe solo "No module named 'pymssql'".
+
+def test_driver_presente_non_solleva():
+    controlla_driver_disponibile(make_url("postgresql+psycopg2://u:p@h/db"))
+
+
+def test_driver_nostro_mancante_spiega_come_installarlo(monkeypatch):
+    monkeypatch.setattr(
+        "diffdb.schema_snapshot.importlib.util.find_spec", lambda nome: None
+    )
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    with pytest.raises(RuntimeError) as errore:
+        controlla_driver_disponibile(make_url("oracle+oracledb://u:p@h:1521/x"))
+
+    messaggio = str(errore.value)
+    assert "oracledb" in messaggio
+    assert "diffdb[oracle]" in messaggio
+
+
+def test_su_macos_sql_server_dice_che_non_c_e(monkeypatch):
+    monkeypatch.setattr(
+        "diffdb.schema_snapshot.importlib.util.find_spec", lambda nome: None
+    )
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    with pytest.raises(RuntimeError) as errore:
+        controlla_driver_disponibile(make_url("mssql+pymssql://u:p@h/db"))
+
+    assert "macOS" in str(errore.value)
+
+
+def test_i_driver_non_nostri_non_sono_controllati(monkeypatch):
+    """pyodbc e pysqlite li installa l'utente: non dobbiamo bocciarli noi,
+    e 'pysqlite' non e' nemmeno il nome di un modulo importabile."""
+    monkeypatch.setattr(
+        "diffdb.schema_snapshot.importlib.util.find_spec", lambda nome: None
+    )
+    controlla_driver_disponibile(make_url("mssql+pyodbc://u:p@h/db"))
+    controlla_driver_disponibile(make_url("sqlite:///x.db"))

@@ -136,6 +136,12 @@ Every GitHub release attaches, for each system, both an **installer** and a
 
 Next to them is a `SHA256SUMS` file to verify the download.
 
+> **SQL Server is not available in the macOS package.** The `pymssql` wheel
+> claims to be universal2 but ships x86_64-only OpenSSL: it cannot load inside
+> an arm64 app, and its presence also broke PostgreSQL and Oracle. On macOS you
+> still get PostgreSQL, MySQL/MariaDB, Oracle and SQLite; for SQL Server use
+> Windows or Linux, or install with `pip install 'diffdb[mssql]'`.
+
 **Updates.** The **ⓘ** button at the top checks whether a newer version exists
 (it opens the releases page). The check is always on request: DiFFDB never
 contacts the network on its own, unless you turn on *"Check for updates at

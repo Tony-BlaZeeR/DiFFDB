@@ -22,6 +22,24 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
   che stanno in codice C. Ora vengono raccolti esplicitamente.
   **Affetti: tutti gli eseguibili e installer 1.4.0** — chi usa Oracle deve
   aggiornare. Chi installa con `pip` non era toccato.
+- **Nel pacchetto macOS non funzionava nessuna connessione** a PostgreSQL,
+  Oracle e SQL Server. Il wheel di `pymssql` si dichiara universal2 ma spedisce
+  OpenSSL solo x86_64; PyInstaller appiattisce tutte le librerie native nella
+  radice del bundle, dove quel `libssl.3.dylib` x86_64 vinceva sulla versione
+  arm64 di `psycopg2` e rompeva a cascata `psycopg2`, il modulo `ssl` della
+  libreria standard e quindi `oracledb`. Ora su macOS `pymssql` resta fuori dal
+  pacchetto. **Affetti: i `.dmg` 1.4.0 e precedenti.**
+  Scoperto dal nuovo `--selftest`, non da una segnalazione.
+
+### Cambiato
+
+- **SQL Server non e' piu' disponibile nel pacchetto macOS** (resta su Windows
+  e Linux, e su macOS con `pip install 'diffdb[mssql]'`). Non e' una rinuncia:
+  su macOS `pymssql` non riusciva a caricarsi comunque, e tenerlo dentro
+  impediva anche a PostgreSQL e Oracle di funzionare. Scegliendo un database
+  non disponibile ora si ottiene un messaggio che lo dice, invece di un
+  `No module named ...`. Da rivedere quando il wheel a monte spedira' OpenSSL
+  per arm64.
 
 ### Aggiunto
 

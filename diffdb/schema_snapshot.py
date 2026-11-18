@@ -6,8 +6,10 @@ segnaposto. Sequenze e sinonimi si leggono dai cataloghi di sistema, perche'
 SQLAlchemy non li espone in modo uniforme.
 """
 
+import importlib.util
 import logging
 import re
+import sys
 from dataclasses import dataclass, field
 
 from sqlalchemy import (
@@ -470,12 +472,43 @@ def normalizza_driver(url):
     return url
 
 
+def controlla_driver_disponibile(url) -> None:
+    """Spiega in chiaro un driver che non c'e', invece di lasciar arrivare
+    all'utente il "No module named ..." di SQLAlchemy.
+
+    Serve soprattutto su macOS, dove SQL Server non e' nel pacchetto: il wheel
+    di pymssql spedisce OpenSSL x86_64 e rompeva gli altri driver (vedi
+    DiFFDB.spec). Il controllo riguarda solo i driver che impacchettiamo noi:
+    pyodbc, pysqlite e simili li installa l'utente e non ci riguardano.
+    """
+    driver = url.get_driver_name()
+    if driver not in set(DRIVER_IMPACCHETTATO.values()):
+        return
+    if importlib.util.find_spec(driver) is not None:
+        return
+
+    if sys.platform == "darwin" and driver == "pymssql":
+        raise RuntimeError(
+            "SQL Server non e' disponibile nella versione macOS di DiFFDB, "
+            "perche' il driver pymssql non funziona su questa piattaforma. "
+            "Usa DiFFDB su Windows o Linux, oppure installalo con "
+            "\"pip install 'diffdb[mssql]'\"."
+        )
+    raise RuntimeError(
+        f"Il driver '{driver}' non e' disponibile in questa installazione di "
+        f"DiFFDB. Installalo con \"pip install "
+        f"'diffdb[{url.get_backend_name()}]'\" oppure usa un eseguibile che lo "
+        "contenga."
+    )
+
+
 def crea_engine(conn_str: str, env_name: str | None = None,
                 secondi: int = SECONDI_CONNESSIONE,
                 secondi_query: int = SECONDI_QUERY):
     """Engine con timeout di connessione, di interrogazione, e controllo
     della connessione morta."""
     url = normalizza_driver(make_url(expand(conn_str, name=env_name)))
+    controlla_driver_disponibile(url)
     driver = url.get_driver_name()
     connect_args = connect_args_per(url, secondi)
 
