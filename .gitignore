@@ -187,3 +187,6 @@ diffdb.ini
 
 .claude/
 connessioniadapter
+
+# Esito di `DiFFDB --selftest`: lo rigenera la CI a ogni build.
+selftest-report.txt

@@ -280,6 +280,27 @@ jobs:
 
       - run: pyinstaller DiFFDB.spec
 
+      # I driver DB devono stare davvero dentro il bundle, non solo nel venv:
+      # li importano da estensioni compilate che l'analisi statica di
+      # PyInstaller non vede, quindi i test da sorgente restano verdi anche con
+      # un eseguibile rotto. E' il controllo che mancava quando la 1.4.0 e'
+      # uscita senza cryptography e Oracle falliva con DPY-3016.
+      # Su Windows l'eseguibile e' senza console e non stampa: si legge il
+      # report su file, l'esito arriva dal codice di uscita.
+      - name: I driver sono nel bundle
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            exe=dist/DiFFDB.exe
+          else
+            exe=dist/DiFFDB
+          fi
+          if ! "$exe" --selftest; then
+            cat selftest-report.txt 2>/dev/null || true
+            exit 1
+          fi
+          cat selftest-report.txt 2>/dev/null || true
+
       # --- firma -------------------------------------------------------------
       #
       # Un eseguibile non firmato non e' solo un avviso: con SmartScreen la

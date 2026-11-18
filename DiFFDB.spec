@@ -8,6 +8,8 @@
 import os
 import sys
 
+from PyInstaller.utils.hooks import collect_all
+
 block_cipher = None
 
 # Su Windows PyInstaller vuole un .ico. Se non c'e', si costruisce senza icona
@@ -40,10 +42,30 @@ hiddenimports = [
     "pymssql",
 ]
 
+# oracledb (thin mode) e cryptography importano moduli dall'interno delle loro
+# estensioni compilate (thin_impl*.pyd, _rust.pyd): essendo codice C/Cython,
+# l'analisi statica di PyInstaller non vede quegli import e non li impacchetta.
+# Senza, la connessione Oracle fallisce a runtime: prima "DPY-3016 ...
+# cryptography package is not installed", poi ModuleNotFoundError su moduli
+# standard (uuid, secrets, getpass, ...) che thin_impl importa. Li raccogliamo
+# a mano. Verificato su build frozen: la connessione arriva fino al socket.
+crypto_datas, crypto_binaries, crypto_hiddenimports = collect_all("cryptography")
+oracle_datas, oracle_binaries, oracle_hiddenimports = collect_all("oracledb")
+datas += crypto_datas + oracle_datas
+hiddenimports += crypto_hiddenimports + oracle_hiddenimports
+# Stdlib importati da dentro le estensioni compilate di oracledb (invisibili
+# all'analisi statica): li elenchiamo esplicitamente.
+hiddenimports += [
+    "array", "asyncio", "base64", "collections", "datetime", "decimal",
+    "getpass", "hashlib", "hmac", "json", "platform", "queue", "random",
+    "secrets", "ssl", "struct", "subprocess", "uuid", "xml.dom.minidom",
+]
+collected_binaries = crypto_binaries + oracle_binaries
+
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[],
+    binaries=collected_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
