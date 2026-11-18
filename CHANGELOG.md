@@ -9,6 +9,29 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 
 ## [Non rilasciato]
 
+## [1.4.1] - 2026-11-18
+
+### Corretto
+
+- **Le connessioni Oracle fallivano negli eseguibili e negli installer** con
+  `DPY-3016: python-oracledb thin mode cannot be used because the cryptography
+  package is not installed`. Il pacchetto `cryptography` c'era fra le
+  dipendenze, ma non finiva nel bundle: `oracledb` lo importa (insieme a
+  `uuid`, `secrets` e altri moduli standard) dall'interno della sua estensione
+  compilata `thin_impl`, e l'analisi statica di PyInstaller non vede gli import
+  che stanno in codice C. Ora vengono raccolti esplicitamente.
+  **Affetti: tutti gli eseguibili e installer 1.4.0** — chi usa Oracle deve
+  aggiornare. Chi installa con `pip` non era toccato.
+
+### Aggiunto
+
+- **`--selftest`**: l'eseguibile controlla che i driver DB siano davvero dentro
+  il bundle e lo riporta (`selftest-report.txt`). La CI lo esegue sul binario
+  appena costruito, su tutti e tre i sistemi, e **ferma la release** se un
+  driver manca. I test da sorgente non potevano accorgersene: nel venv di
+  sviluppo quei moduli ci sono sempre, quindi restavano verdi anche con un
+  eseguibile rotto.
+
 ## [1.4.0] - 2026-11-05
 
 ### Aggiunto
