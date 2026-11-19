@@ -27,6 +27,10 @@ classifiers = [
 dependencies = [
     "SQLAlchemy>=2.0,<3",
     "keyring>=25,<26",
+    # Serve al confronto di viste, default e CHECK: la normalizzazione lavora
+    # sui token, non sul testo, per non confondere la formattazione con una
+    # differenza vera (vedi normalize_sql in schema_snapshot.py).
+    "sqlparse>=0.5,<1",
 ]
 
 [project.optional-dependencies]

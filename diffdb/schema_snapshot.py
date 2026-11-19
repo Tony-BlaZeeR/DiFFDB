@@ -12,6 +12,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
+import sqlparse
 from sqlalchemy import (
     CheckConstraint,
     MetaData,
@@ -23,6 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
+from sqlparse import tokens as sqltokens
 
 from diffdb.rules import NESSUNA, Regole
 from diffdb.urls import expand  # noqa: F401  (ri-esportata: la usa anche diff_DB)
@@ -811,22 +813,102 @@ def unique_signature(constraint) -> str:
 
 _WS = re.compile(r"\s+")
 
+# Dopo questi token non va lo spazio, e prima di questi non va: cosi' due
+# formattatori che scrivono "f(a, b)" e "f( a , b )" danno la stessa stringa.
+_SENZA_SPAZIO_PRIMA = {",", ")", ";", "."}
+_SENZA_SPAZIO_DOPO = {"(", "."}
+
+
+def _token_significativi(sql: str) -> list[str]:
+    """I token dell'istruzione, senza commenti ne' spaziatura.
+
+    Stringhe e identificatori quotati tornano tali e quali: metterli in
+    minuscolo nasconderebbe differenze vere, perche' 'Mario' e 'mario' sono
+    due default diversi e "Col" e "col" due colonne diverse.
+    """
+    pezzi: list[str] = []
+    for statement in sqlparse.parse(sql):
+        for token in statement.flatten():
+            if token.is_whitespace or token.ttype in sqltokens.Comment:
+                continue
+            if (token.ttype in sqltokens.Literal.String
+                    or token.ttype in sqltokens.Name.Quoted):
+                pezzi.append(token.value)
+            else:
+                pezzi.append(token.value.lower())
+    return pezzi
+
+
+def _ricompone(pezzi: list[str]) -> str:
+    """Rimette insieme i token con una spaziatura unica e prevedibile."""
+    fuori: list[str] = []
+    for pezzo in pezzi:
+        if fuori and not (pezzo in _SENZA_SPAZIO_PRIMA
+                          or fuori[-1] in _SENZA_SPAZIO_DOPO):
+            fuori.append(" ")
+        fuori.append(pezzo)
+    return "".join(fuori)
+
+
+def _parentesi_esterne_combaciano(testo: str) -> bool:
+    """Vero se la parentesi iniziale si chiude proprio all'ultimo carattere.
+
+    Serve a non trasformare "(a) or (b)" in "a) or (b", che e' quello che
+    faceva il controllo precedente, fatto sui soli caratteri agli estremi.
+    """
+    if len(testo) < 2 or testo[0] != "(" or testo[-1] != ")":
+        return False
+    livello = 0
+    for posizione, carattere in enumerate(testo):
+        if carattere == "(":
+            livello += 1
+        elif carattere == ")":
+            livello -= 1
+            if livello == 0:
+                return posizione == len(testo) - 1
+    return False
+
 
 def normalize_sql(sql) -> str:
-    """Normalizza per il confronto: spazi collassati, minuscolo, parentesi e
-    apici esterni rimossi. I database riformattano viste, default e check
-    (SQL Server incapsula i default in doppie parentesi), quindi il confronto
-    testuale grezzo darebbe falsi positivi."""
+    """Normalizza per il confronto, lavorando sui token e non sul testo.
+
+    I database e gli editor riformattano viste, default e check a modo loro:
+    indentazione, maiuscole delle parole chiave, spazi attorno a virgole e
+    operatori, commenti. Confrontare il testo grezzo darebbe falsi positivi.
+
+    Quello che NON si normalizza e' il contenuto delle stringhe e degli
+    identificatori quotati: la versione precedente minuscolizzava tutto,
+    percio' un default 'Mario' e un default 'mario' risultavano uguali e la
+    differenza sparuva dal confronto. Nascondere una differenza vera e' un
+    danno peggiore di un falso allarme.
+    """
     sql = str(sql) if sql is not None else ""
-    if not sql:
+    if not sql.strip():
         return ""
-    normalized = _WS.sub(" ", sql).strip().lower().rstrip(";").strip()
-    while len(normalized) >= 2 and normalized[0] in "('" and normalized[-1] in ")'":
-        inner = normalized[1:-1].strip()
-        if not inner:
-            break
-        normalized = inner
-    return normalized
+
+    normalizzato = _ricompone(_token_significativi(sql)).strip()
+    while normalizzato.endswith(";"):
+        normalizzato = normalizzato[:-1].strip()
+
+    # SQL Server conserva i default fra parentesi, a volte doppie, e le
+    # stringhe fra apici: si togliono solo quando avvolgono davvero tutto.
+    while True:
+        if _parentesi_esterne_combaciano(normalizzato):
+            interno = normalizzato[1:-1].strip()
+            if not interno:
+                break
+            normalizzato = interno
+            continue
+        if (len(normalizzato) >= 2 and normalizzato[0] == "'"
+                and normalizzato[-1] == "'" and "'" not in normalizzato[1:-1]):
+            interno = normalizzato[1:-1].strip()
+            if not interno:
+                break
+            normalizzato = interno
+            continue
+        break
+
+    return normalizzato
 
 
 def check_signature(constraint) -> str:
