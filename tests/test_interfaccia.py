@@ -35,6 +35,51 @@ def config(tmp_path, monkeypatch):
 # --- cataloghi di traduzione ----------------------------------------------
 
 
+def test_ogni_traduzione_del_sorgente_e_anche_nel_compilato(app):
+    """Esistere non basta: un .qm vecchio lascia l'interfaccia in italiano.
+
+    E' successo davvero: tredici stringhe aggiunte al .ts e il .qm di due
+    settimane prima, con il test accanto verde perche' guardava solo se il
+    file c'era.
+
+    Il confronto e' sul contenuto e non sulle date: `traduzioni.py --check`
+    riscrive il .ts a ogni esecuzione, quindi un controllo sui tempi di
+    modifica direbbe "da ricompilare" anche subito dopo aver ricompilato.
+    """
+    import xml.etree.ElementTree as ET
+
+    from diffdb.qt import QtCore
+
+    for sorgente in (RADICE / "diffdb" / "translations").glob("diffdb_*.ts"):
+        compilato = sorgente.with_suffix(".qm")
+        assert compilato.exists(), f"manca {compilato.name}"
+
+        traduttore = QtCore.QTranslator()
+        assert traduttore.load(str(compilato)), f"{compilato.name} illeggibile"
+
+        radice = ET.parse(sorgente).getroot()
+        mancanti = []
+        for contesto in radice.findall("context"):
+            nome = contesto.findtext("name") or ""
+            for messaggio in contesto.findall("message"):
+                testo = messaggio.findtext("source") or ""
+                tradotto = messaggio.find("translation")
+                # Solo le traduzioni finite hanno l'attributo type assente:
+                # "unfinished" non e' ancora tradotta, "vanished" e
+                # "obsolete" riguardano stringhe non piu' nel codice, che
+                # lrelease giustamente non mette nel .qm.
+                if tradotto is None or tradotto.get("type") is not None:
+                    continue
+                atteso = tradotto.text or ""
+                if traduttore.translate(nome, testo) != atteso:
+                    mancanti.append(f"[{nome}] {testo!r}")
+
+        assert not mancanti, (
+            f"{compilato.name} non contiene {len(mancanti)} traduzione/i del "
+            f".ts (es. {mancanti[:3]}): ricompila con "
+            "'python tools/traduzioni.py'")
+
+
 def test_ogni_catalogo_e_compilato():
     """Un .ts senza il suo .qm vuol dire interfaccia che resta in italiano."""
     for sorgente in (RADICE / "diffdb" / "translations").glob("diffdb_*.ts"):

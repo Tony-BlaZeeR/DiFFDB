@@ -128,6 +128,39 @@ def imposta_geometria(larghezza: int, altezza: int, x: int, y: int,
     valori.sync()
 
 
+# Larghezze delle colonne, una voce per tabella. Si tengono separate dalla
+# geometria della finestra perche' il numero di colonne cambia fra una
+# versione e l'altra: quando ne abbiamo aggiunta una, le larghezze salvate
+# prima non combaciano piu' e vanno ignorate invece di applicate a caso.
+CHIAVE_COLONNE = "interfaccia/colonne"
+
+
+def larghezze_colonne(tabella: str, quante: int) -> list[int] | None:
+    """Le larghezze salvate per quella tabella, o None se non si possono usare.
+
+    Restituisce None anche quando il numero di colonne non combacia: succede
+    dopo un aggiornamento che ne aggiunge una, e applicare la lista vecchia
+    sposterebbe le larghezze sulle colonne sbagliate.
+    """
+    grezzo = impostazioni().value(f"{CHIAVE_COLONNE}/{tabella}")
+    if not grezzo:
+        return None
+    try:
+        larghezze = [int(pezzo) for pezzo in str(grezzo).split(",")]
+    except (TypeError, ValueError):
+        return None   # scritto a mano e rovinato: si riparte dal contenuto
+    if len(larghezze) != quante or any(larghezza <= 0 for larghezza in larghezze):
+        return None
+    return larghezze
+
+
+def imposta_larghezze_colonne(tabella: str, larghezze) -> None:
+    valori = impostazioni()
+    valori.setValue(f"{CHIAVE_COLONNE}/{tabella}",
+                    ",".join(str(int(larghezza)) for larghezza in larghezze))
+    valori.sync()
+
+
 CHIAVE_ULTIMO_CONFRONTO = "ultimo_confronto"
 
 

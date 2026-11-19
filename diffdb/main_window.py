@@ -40,6 +40,11 @@ def _icon_color() -> str:
 TAB_HOME, TAB_CONFIGURAZIONE, TAB_SCELTA, TAB_RISULTATI = range(4)
 COL_NAME, COL_STRING, COL_PASSWORD, COL_SCHEMA, COL_EDIT, COL_DELETE = range(6)
 
+# Con quale nome si salvano le larghezze, e quali colonne hanno senso da
+# ricordare: quelle dei pulsanti si ridimensionano da sole.
+NOME_COLONNE_CONNESSIONI = "connessioni"
+LARGHE_CONNESSIONI = (COL_NAME, COL_STRING, COL_PASSWORD, COL_SCHEMA)
+
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -52,6 +57,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thread = None
         self.worker = None
         self._ultimo_diff = None
+        self._colonne_conn_sistemate = False
+        self._sto_sistemando_conn = False
         self._upd_thread = None
         self._upd_worker = None
         self.output_dir = preferences.cartella_output(str(config_dir()))
@@ -166,12 +173,66 @@ class MainWindow(QtWidgets.QMainWindow):
             delete_button.clicked.connect(lambda _=False, r=row: self.delete_connection(r))
             table.setCellWidget(row, COL_DELETE, delete_button)
 
-        # La connessione e' la colonna lunga: prende lo spazio che avanza invece
-        # di essere troncata a meta' come le altre.
+        self._sistema_colonne_connessioni(table)
+
+    def _sistema_colonne_connessioni(self, table) -> None:
+        """Larghezze della tabella delle connessioni.
+
+        Prima le colonne stavano in ResizeToContents e la stringa in Stretch:
+        in entrambe le modalita' Qt non lascia trascinare il bordo, percio'
+        questa tabella non si poteva ridimensionare affatto. Ora le colonne
+        con del testo sono Interactive, e la stringa di connessione si prende
+        lo spazio che avanza al primo riempimento senza perdere la presa.
+
+        Le due colonne dei pulsanti restano aderenti al contenuto: sono icone
+        di dimensione fissa, allargarle non servirebbe a niente.
+        """
         header = table.horizontalHeader()
-        for column in (COL_NAME, COL_PASSWORD, COL_SCHEMA, COL_EDIT, COL_DELETE):
-            header.setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(COL_STRING, QtWidgets.QHeaderView.ResizeMode.Stretch)
+
+        # Come per l'albero dei risultati: anche setSectionResizeMode fa
+        # scattare sectionResized, percio' l'interruttore copre tutto.
+        self._sto_sistemando_conn = True
+        try:
+            header.setStretchLastSection(False)
+            for column in (COL_EDIT, COL_DELETE):
+                header.setSectionResizeMode(
+                    column, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+            for column in (COL_NAME, COL_STRING, COL_PASSWORD, COL_SCHEMA):
+                header.setSectionResizeMode(
+                    column, QtWidgets.QHeaderView.ResizeMode.Interactive)
+
+            if self._colonne_conn_sistemate:
+                return
+            self._colonne_conn_sistemate = True
+            header.sectionResized.connect(self._ricorda_colonne_connessioni)
+
+            salvate = preferences.larghezze_colonne(
+                NOME_COLONNE_CONNESSIONI, len(LARGHE_CONNESSIONI))
+            if salvate:
+                for column, larghezza in zip(LARGHE_CONNESSIONI, salvate, strict=False):
+                    table.setColumnWidth(column, larghezza)
+                return
+            table.resizeColumnsToContents()
+            avanzo = table.viewport().width() - sum(
+                table.columnWidth(c) for c in range(table.columnCount()))
+            if avanzo > 0:
+                table.setColumnWidth(COL_STRING,
+                                     table.columnWidth(COL_STRING) + avanzo)
+        finally:
+            self._sto_sistemando_conn = False
+
+    def _ricorda_colonne_connessioni(self, *_argomenti) -> None:
+        """Salva le larghezze scelte trascinando, e solo quelle.
+
+        Come per l'albero dei risultati: Qt emette sectionResized anche
+        mentre impagina, prima che le colonne siano state sistemate.
+        """
+        if self._sto_sistemando_conn or not self._colonne_conn_sistemate:
+            return   # le impostiamo noi, o Qt sta ancora impaginando
+        tabella = self.conn_table()
+        preferences.imposta_larghezze_colonne(
+            NOME_COLONNE_CONNESSIONI,
+            [tabella.columnWidth(c) for c in LARGHE_CONNESSIONI])
 
     def _pastiglia_password(self, connection) -> QtWidgets.QLabel:
         """Dove sta davvero la password di questa connessione.

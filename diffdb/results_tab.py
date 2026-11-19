@@ -9,7 +9,7 @@ E' pura presentazione del DiffResult che il confronto ha gia' prodotto:
 
 import logging
 
-from diffdb import theme
+from diffdb import preferences, theme
 from diffdb.diff_DB import MISSING
 from diffdb.qt import Qt, QtGui, QtWidgets
 from diffdb.widgets import Riquadro
@@ -32,6 +32,9 @@ COL_PRESENTE = 3
 COL_MANCA = 4
 COL_DETTAGLIO = 5
 
+# Con quale nome si salvano le larghezze di questo albero.
+NOME_COLONNE = "risultati"
+
 # I colori delle tre direzioni arrivano dal tema attivo (theme.colori_diff),
 # cosi' seguono variante e chiaro/scuro; sono scelti per restare a >=4.5:1 sul
 # fondo dell'albero (WCAG AA) in ogni tavolozza.
@@ -50,6 +53,8 @@ class ResultsTab(QtWidgets.QWidget):
         self._on_export_sql = on_export_sql
         self._on_accept = on_accept
         self._diff = None
+        self._colonne_sistemate = False
+        self._sto_sistemando = False
         self._build_ui()
 
     # --- costruzione UI ---------------------------------------------------
@@ -135,6 +140,7 @@ class ResultsTab(QtWidgets.QWidget):
         self.tree.setRootIsDecorated(True)
         self.tree.setAlternatingRowColors(True)
         self.tree.itemChanged.connect(self._on_item_changed)
+        self.tree.header().sectionResized.connect(self._ricorda_colonne)
         layout.addWidget(self.tree)
 
         bottom = QtWidgets.QHBoxLayout()
@@ -283,18 +289,78 @@ class ResultsTab(QtWidgets.QWidget):
 
         self.tree.blockSignals(False)
 
-        # Le prime colonne si dimensionano sul contenuto e l'ultima si prende il
-        # resto: prima "Dettaglio" sbordava e obbligava a scorrere in orizzontale.
-        # Interactive e non ResizeToContents, cosi' restano trascinabili a mano.
-        intestazione = self.tree.header()
-        ultima = self.tree.columnCount() - 1
-        for colonna in range(ultima):
-            intestazione.setSectionResizeMode(
-                colonna, QtWidgets.QHeaderView.ResizeMode.Interactive)
-            self.tree.resizeColumnToContents(colonna)
-        intestazione.setSectionResizeMode(ultima, QtWidgets.QHeaderView.ResizeMode.Stretch)
-
+        self._sistema_colonne()
         self._set_buttons_enabled(not diff.is_empty)
+
+    def _sistema_colonne(self) -> None:
+        """Larghezze delle colonne: quelle scelte dall'utente, se ci sono.
+
+        Prima questo blocco rifaceva resizeColumnToContents a ogni confronto,
+        percio' ogni ricerca di differenze buttava via le larghezze appena
+        sistemate a mano. Ora il calcolo sul contenuto si fa una volta sola,
+        quando non c'e' niente da ripristinare.
+
+        Nessuna colonna e' in Stretch: l'ultima si prende lo spazio che resta
+        al primo riempimento, ma resta trascinabile come le altre. In Stretch
+        Qt non la fa ridimensionare affatto.
+        """
+        intestazione = self.tree.header()
+
+        # L'interruttore copre tutto, cambio di modalita' compreso: anche
+        # setSectionResizeMode fa scattare sectionResized, e senza questa
+        # protezione il salvataggio automatico sovrascriveva le larghezze
+        # ricordate con quelle di default un istante prima di rileggerle.
+        self._sto_sistemando = True
+        try:
+            intestazione.setStretchLastSection(False)
+            for colonna in range(self.tree.columnCount()):
+                intestazione.setSectionResizeMode(
+                    colonna, QtWidgets.QHeaderView.ResizeMode.Interactive)
+
+            if self._colonne_sistemate:
+                return
+            self._colonne_sistemate = True
+
+            salvate = preferences.larghezze_colonne(
+                NOME_COLONNE, self.tree.columnCount())
+            if salvate:
+                for colonna, larghezza in enumerate(salvate):
+                    self.tree.setColumnWidth(colonna, larghezza)
+                return
+            for colonna in range(self.tree.columnCount()):
+                self.tree.resizeColumnToContents(colonna)
+            self._allarga_ultima_colonna()
+        finally:
+            self._sto_sistemando = False
+
+    def _allarga_ultima_colonna(self) -> None:
+        """Il dettaglio si prende lo spazio avanzato, senza sbordare.
+
+        Serve a non costringere a scorrere in orizzontale appena si apre un
+        confronto, che era il motivo per cui prima l'ultima colonna stava in
+        Stretch.
+        """
+        ultima = self.tree.columnCount() - 1
+        disponibile = self.tree.viewport().width()
+        occupato = sum(self.tree.columnWidth(c) for c in range(ultima))
+        resto = disponibile - occupato
+        if resto > self.tree.columnWidth(ultima):
+            self.tree.setColumnWidth(ultima, resto)
+
+    def _ricorda_colonne(self, *_argomenti) -> None:
+        """Salva le larghezze quando l'utente le cambia trascinando.
+
+        Due casi da scartare, e il secondo mi era sfuggito: oltre ai nostri
+        ridimensionamenti, Qt emette sectionResized anche mentre impagina il
+        widget, prima che _sistema_colonne abbia girato. Salvare quelle
+        misure voleva dire sovrascrivere le larghezze ricordate con i valori
+        di default un istante prima di rileggerle.
+        """
+        if self._sto_sistemando or not self._colonne_sistemate:
+            return   # le impostiamo noi, o Qt sta ancora impaginando
+        preferences.imposta_larghezze_colonne(
+            NOME_COLONNE,
+            [self.tree.columnWidth(c) for c in range(self.tree.columnCount())])
 
     def _etichetta_sezione(self, chiave: str) -> str:
         """Nome leggibile di una categoria, nella lingua dell'interfaccia."""
