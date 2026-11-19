@@ -9,6 +9,50 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 
 ## [Non rilasciato]
 
+## [1.4.2] - 2026-11-19
+
+### Corretto
+
+- **Il confronto nascondeva differenze vere dentro le stringhe.** La
+  normalizzazione metteva tutto in minuscolo prima di confrontare, percio' un
+  default `'Mario'` e un default `'mario'` risultavano identici e la
+  differenza non compariva affatto; stesso effetto sugli identificatori
+  quotati, dove `"Col"` e `"col"` sono due colonne diverse. Ora stringhe e
+  identificatori quotati restano intatti. **Riguarda viste, default e CHECK**,
+  cioe' tutto quello che passa da quella funzione. Tacere su una differenza
+  reale e' il guasto peggiore per uno strumento che serve a essere creduto:
+  se hai confrontato ambienti dove la distinzione fra maiuscole e minuscole
+  conta, vale la pena rifare il confronto.
+- **Restavano invece falsi allarmi sulla formattazione** che la stessa
+  funzione prometteva di assorbire: spazio prima della virgola, spazi attorno
+  agli operatori, commenti aggiunti da un editor. L'indentazione era gia'
+  gestita. Il confronto ora lavora sui token e non sul testo.
+- **Le parentesi esterne venivano tolte male**: il controllo guardava solo i
+  caratteri agli estremi, percio' riduceva `(a) or (b)` a `a) or (b`. Ora si
+  togliono solo quando la parentesi iniziale si chiude all'ultimo carattere.
+- **Le colonne non si potevano ridimensionare trascinandole.** Nella tabella
+  delle connessioni per niente; nell'albero dei risultati l'ultima era
+  bloccata, e le larghezze sistemate a mano venivano buttate via a ogni
+  confronto.
+
+### Aggiunto
+
+- **Colonna "Tipo" nei risultati**: dentro "Indici, chiavi e vincoli"
+  finivano insieme indici, chiavi primarie, chiavi esterne, vincoli di
+  unicita' e CHECK, e si leggeva il nome ma non di quale dei cinque si
+  trattasse. Il dato c'era gia' nel report Excel.
+- **La finestra si ridimensiona da tutti e otto i bordi**, non solo dalla
+  presa in basso a destra, con il cursore della direzione. Lo esegue il
+  sistema operativo, quindi con lo snap ai lati dello schermo.
+- **Le larghezze delle colonne si ricordano** fra una sessione e l'altra, per
+  tabella.
+
+### Cambiato
+
+- **Altezza minima della finestra da 600 a 500**: su uno schermo basso quella
+  di prima costringeva a tenere la finestra piu' alta dello spazio utile.
+
+
 ## [1.4.1] - 2026-11-18
 
 ### Corretto
