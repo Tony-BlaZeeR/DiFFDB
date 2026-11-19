@@ -42,8 +42,13 @@ DEFINITION_MISMATCH = "definizione diversa"
 
 @dataclass
 class Difference:
-    kind: str          # table | column | index | foreign_key | unique | primary_key
-                       # | view | sequence | synonym
+    kind: str          # table | column | index | primary_key | foreign_key
+                       # | unique | check | view | sequence | synonym
+                       # | trigger | procedure | function
+                       # Le etichette leggibili stanno in
+                       # ResultsTab._etichetta_tipo: aggiungendo un tipo qui
+                       # va aggiunta anche la', o la colonna "Tipo" mostra la
+                       # chiave grezza.
     name: str
     change: str
     column: str | None = None

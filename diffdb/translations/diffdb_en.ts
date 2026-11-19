@@ -971,164 +971,230 @@ They will no longer show in the next comparisons, until they change. The choice 
 <context>
     <name>ResultsTab</name>
     <message>
-        <location filename="../results_tab.py" line="179"/>
+        <location filename="../results_tab.py" line="195"/>
         <source>Nessun confronto ancora eseguito.</source>
         <translation>No comparison run yet.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="101"/>
+        <location filename="../results_tab.py" line="111"/>
         <source>Filtra per nome oggetto o colonna...</source>
         <translation>Filter by object or column name...</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="74"/>
+        <location filename="../results_tab.py" line="84"/>
         <source>Nessuna differenza</source>
         <translation>No differences</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="105"/>
+        <location filename="../results_tab.py" line="115"/>
         <source>Seleziona tutto</source>
         <translation>Select all</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="107"/>
+        <location filename="../results_tab.py" line="117"/>
         <source>Deseleziona</source>
         <translation>Clear selection</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="116"/>
+        <location filename="../results_tab.py" line="127"/>
         <source>Oggetto</source>
         <translation>Object</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="116"/>
+        <location filename="../results_tab.py" line="128"/>
+        <source>Tipo</source>
+        <translation>Type</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="129"/>
         <source>Differenza</source>
         <translation>Difference</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="117"/>
+        <location filename="../results_tab.py" line="130"/>
         <source>Presente in</source>
         <translation>Present in</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="117"/>
+        <location filename="../results_tab.py" line="131"/>
         <source>Manca in</source>
         <translation>Missing in</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="118"/>
+        <location filename="../results_tab.py" line="132"/>
         <source>Dettaglio</source>
         <translation>Detail</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="125"/>
+        <location filename="../results_tab.py" line="141"/>
         <source>Accetta selezionate</source>
         <translation>Accept selected</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="128"/>
+        <location filename="../results_tab.py" line="144"/>
         <source>Segna le differenze spuntate come note e volute: non verranno piu&apos; mostrate nei prossimi confronti, finche&apos; non cambiano.</source>
         <translation>Mark the ticked differences as known and wanted: they will no longer show in the next comparisons, until they change.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="132"/>
+        <location filename="../results_tab.py" line="148"/>
         <source>Esporta Excel (tutto)</source>
         <translation>Export Excel (all)</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="134"/>
+        <location filename="../results_tab.py" line="150"/>
         <source>Esporta SQL (selezionati)</source>
         <translation>Export SQL (selected)</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="149"/>
+        <location filename="../results_tab.py" line="165"/>
         <source>Vai al filtro</source>
         <translation>Go to the filter</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="166"/>
+        <location filename="../results_tab.py" line="182"/>
         <source>Riepilogo</source>
         <translation>Summary</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="205"/>
-        <location filename="../results_tab.py" line="206"/>
+        <location filename="../results_tab.py" line="221"/>
+        <location filename="../results_tab.py" line="222"/>
         <source>{0} manca in {1}</source>
         <translation>{0} missing in {1}</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="207"/>
+        <location filename="../results_tab.py" line="223"/>
         <source>{0} presente in entrambi ma diverso</source>
         <translation>{0} present in both but different</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="216"/>
+        <location filename="../results_tab.py" line="232"/>
         <source>{0} e {1} hanno la stessa struttura: nessuna differenza.</source>
         <translation>{0} and {1} have the same structure: no differences.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="220"/>
+        <location filename="../results_tab.py" line="236"/>
         <source>{0}  →  {1}. Spunta le voci da includere nello script SQL.</source>
         <translation>{0}  →  {1}. Tick the entries to include in the SQL script.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="241"/>
+        <location filename="../results_tab.py" line="257"/>
         <source>{0} e {1} hanno la stessa struttura: non c&apos;e&apos; niente da allineare.</source>
         <translation>{0} and {1} have the same structure: there is nothing to align.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="286"/>
+        <location filename="../results_tab.py" line="302"/>
         <source>Tabelle e colonne</source>
         <translation>Tables and columns</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="287"/>
+        <location filename="../results_tab.py" line="303"/>
         <source>Indici, chiavi e vincoli</source>
         <translation>Indexes, keys and constraints</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="288"/>
+        <location filename="../results_tab.py" line="304"/>
         <source>Viste</source>
         <translation>Views</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="289"/>
+        <location filename="../results_tab.py" line="305"/>
         <source>Sequenze</source>
         <translation>Sequences</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="290"/>
+        <location filename="../results_tab.py" line="306"/>
         <source>Sinonimi</source>
         <translation>Synonyms</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="291"/>
+        <location filename="../results_tab.py" line="307"/>
+        <location filename="../results_tab.py" line="333"/>
         <source>Trigger</source>
         <translation>Trigger</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="292"/>
+        <location filename="../results_tab.py" line="308"/>
         <source>Procedure e funzioni</source>
         <translation>Procedures and functions</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="397"/>
+        <location filename="../results_tab.py" line="323"/>
+        <source>Tabella</source>
+        <translation>Table</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="324"/>
+        <source>Colonna</source>
+        <translation>Column</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="325"/>
+        <source>Indice</source>
+        <translation>Index</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="326"/>
+        <source>Chiave primaria</source>
+        <translation>Primary key</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="327"/>
+        <source>Chiave esterna</source>
+        <translation>Foreign key</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="328"/>
+        <source>Vincolo di unicita&apos;</source>
+        <translation>Unique constraint</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="329"/>
+        <source>Vincolo CHECK</source>
+        <translation>CHECK constraint</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="330"/>
+        <source>Vista</source>
+        <translation>View</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="331"/>
+        <source>Sequenza</source>
+        <translation>Sequence</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="332"/>
+        <source>Sinonimo</source>
+        <translation>Synonym</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="334"/>
+        <source>Procedura</source>
+        <translation>Procedure</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="335"/>
+        <source>Funzione</source>
+        <translation>Function</translation>
+    </message>
+    <message>
+        <location filename="../results_tab.py" line="442"/>
         <source>Niente da accettare</source>
         <translation>Nothing to accept</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="411"/>
+        <location filename="../results_tab.py" line="456"/>
         <source>Niente da esportare</source>
         <translation>Nothing to export</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="398"/>
-        <location filename="../results_tab.py" line="412"/>
+        <location filename="../results_tab.py" line="443"/>
+        <location filename="../results_tab.py" line="457"/>
         <source>Spunta almeno una differenza.</source>
         <translation>Tick at least one difference.</translation>
     </message>
     <message>
-        <location filename="../results_tab.py" line="430"/>
+        <location filename="../results_tab.py" line="475"/>
         <source>Esporta SQL ({0} selezionati)</source>
         <translation>Export SQL ({0} selected)</translation>
     </message>

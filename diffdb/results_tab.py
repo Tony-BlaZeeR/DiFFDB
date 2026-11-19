@@ -22,6 +22,16 @@ logger = logging.getLogger(__name__)
 
 DIFF_ROLE = Qt.ItemDataRole.UserRole  # ci appendo l'oggetto Difference
 
+# Le colonne dell'albero per nome. Quando "Tipo" e' stata inserita in mezzo,
+# gli indici scritti a mano altrove (la ricerca leggeva la 4) hanno smesso di
+# puntare alla colonna giusta senza dare errore: con i nomi non succede.
+COL_OGGETTO = 0
+COL_TIPO = 1
+COL_DIFFERENZA = 2
+COL_PRESENTE = 3
+COL_MANCA = 4
+COL_DETTAGLIO = 5
+
 # I colori delle tre direzioni arrivano dal tema attivo (theme.colori_diff),
 # cosi' seguono variante e chiaro/scuro; sono scelti per restare a >=4.5:1 sul
 # fondo dell'albero (WCAG AA) in ogni tavolozza.
@@ -112,10 +122,16 @@ class ResultsTab(QtWidgets.QWidget):
 
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setTextElideMode(Qt.TextElideMode.ElideRight)
-        self.tree.setColumnCount(5)
-        self.tree.setHeaderLabels([self.tr("Oggetto"), self.tr("Differenza"),
-                                   self.tr("Presente in"), self.tr("Manca in"),
-                                   self.tr("Dettaglio")])
+        self.tree.setColumnCount(6)
+        intestazioni = {
+            COL_OGGETTO: self.tr("Oggetto"),
+            COL_TIPO: self.tr("Tipo"),
+            COL_DIFFERENZA: self.tr("Differenza"),
+            COL_PRESENTE: self.tr("Presente in"),
+            COL_MANCA: self.tr("Manca in"),
+            COL_DETTAGLIO: self.tr("Dettaglio"),
+        }
+        self.tree.setHeaderLabels([intestazioni[c] for c in sorted(intestazioni)])
         self.tree.setRootIsDecorated(True)
         self.tree.setAlternatingRowColors(True)
         self.tree.itemChanged.connect(self._on_item_changed)
@@ -292,6 +308,33 @@ class ResultsTab(QtWidgets.QWidget):
             "routines": self.tr("Procedure e funzioni"),
         }.get(chiave, chiave)
 
+    def _etichetta_tipo(self, kind: str) -> str:
+        """Che cosa e' l'oggetto della differenza, in parole.
+
+        Dentro "Indici, chiavi e vincoli" finiscono insieme indici, chiavi
+        primarie, chiavi esterne, vincoli di unicita' e CHECK: senza questa
+        colonna si leggeva il nome della tabella e la direzione, ma non si
+        capiva di quale dei cinque si stesse parlando.
+
+        Le stringhe sono letterali dentro self.tr() di proposito: lupdate
+        legge il sorgente, e da self.tr(variabile) non estrae niente.
+        """
+        return {
+            "table": self.tr("Tabella"),
+            "column": self.tr("Colonna"),
+            "index": self.tr("Indice"),
+            "primary_key": self.tr("Chiave primaria"),
+            "foreign_key": self.tr("Chiave esterna"),
+            "unique": self.tr("Vincolo di unicita'"),
+            "check": self.tr("Vincolo CHECK"),
+            "view": self.tr("Vista"),
+            "sequence": self.tr("Sequenza"),
+            "synonym": self.tr("Sinonimo"),
+            "trigger": self.tr("Trigger"),
+            "procedure": self.tr("Procedura"),
+            "function": self.tr("Funzione"),
+        }.get(kind, kind)
+
     def _costruisci_diff_item(self, d):
         """Costruisce la riga di una differenza, senza genitore.
 
@@ -300,11 +343,12 @@ class ResultsTab(QtWidgets.QWidget):
         """
         label = d.name if not d.column else f"{d.name}.{d.column}"
         item = QtWidgets.QTreeWidgetItem(
-            [label, f"{self._simbolo(d)}  {d.change}",
+            [label, self._etichetta_tipo(d.kind),
+             f"{self._simbolo(d)}  {d.change}",
              d.present_in or "", d.missing_in or "", d.detail])
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-        item.setCheckState(0, Qt.CheckState.Checked)
-        item.setData(0, DIFF_ROLE, d)
+        item.setCheckState(COL_OGGETTO, Qt.CheckState.Checked)
+        item.setData(COL_OGGETTO, DIFF_ROLE, d)
 
         color = self._color_for(d)
         # Il testo lungo viene troncato con i puntini: nel tooltip resta intero.
@@ -369,7 +413,8 @@ class ResultsTab(QtWidgets.QWidget):
             visible_children = 0
             for j in range(section.childCount()):
                 child = section.child(j)
-                match = needle in child.text(0).lower() or needle in child.text(4).lower()
+                match = (needle in child.text(COL_OGGETTO).lower()
+                         or needle in child.text(COL_DETTAGLIO).lower())
                 child.setHidden(bool(needle) and not match)
                 visible_children += 0 if child.isHidden() else 1
             section.setHidden(bool(needle) and visible_children == 0)

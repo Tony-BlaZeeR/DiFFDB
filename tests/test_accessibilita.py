@@ -198,6 +198,7 @@ def _foglie(tab):
 def test_ogni_riga_porta_un_simbolo_oltre_al_colore(tab_con_risultati):
     """Chi non distingue verde e arancio vedrebbe righe identiche."""
     from diffdb.results_tab import (
+        COL_DIFFERENZA,
         SIMBOLO_DIVERSO,
         SIMBOLO_MANCA_NEL_PRIMO,
         SIMBOLO_MANCA_NEL_SECONDO,
@@ -208,18 +209,21 @@ def test_ogni_riga_porta_un_simbolo_oltre_al_colore(tab_con_risultati):
     assert foglie
 
     for foglia in foglie:
-        assert foglia.text(1)[0] in simboli, f"riga senza simbolo: {foglia.text(1)!r}"
+        simbolo = foglia.text(COL_DIFFERENZA)
+        assert simbolo[0] in simboli, f"riga senza simbolo: {simbolo!r}"
 
 
 def test_i_simboli_distinguono_le_tre_direzioni(tab_con_risultati):
     """Non basta esserci: devono essere diversi fra loro."""
     from diffdb.results_tab import (
+        COL_DIFFERENZA,
         SIMBOLO_DIVERSO,
         SIMBOLO_MANCA_NEL_PRIMO,
         SIMBOLO_MANCA_NEL_SECONDO,
     )
 
-    trovati = {foglia.text(1)[0] for foglia in _foglie(tab_con_risultati)}
+    trovati = {foglia.text(COL_DIFFERENZA)[0]
+               for foglia in _foglie(tab_con_risultati)}
     assert trovati == {SIMBOLO_MANCA_NEL_PRIMO, SIMBOLO_MANCA_NEL_SECONDO, SIMBOLO_DIVERSO}
 
 
