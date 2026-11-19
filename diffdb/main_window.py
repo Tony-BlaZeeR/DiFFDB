@@ -40,10 +40,51 @@ def _icon_color() -> str:
 TAB_HOME, TAB_CONFIGURAZIONE, TAB_SCELTA, TAB_RISULTATI = range(4)
 COL_NAME, COL_STRING, COL_PASSWORD, COL_SCHEMA, COL_EDIT, COL_DELETE = range(6)
 
-# Con quale nome si salvano le larghezze, e quali colonne hanno senso da
-# ricordare: quelle dei pulsanti si ridimensionano da sole.
+# Con quale nome si salvano le larghezze delle colonne, e quali colonne ha
+# senso ricordare: quelle dei pulsanti si dimensionano da sole sulle icone.
 NOME_COLONNE_CONNESSIONI = "connessioni"
 LARGHE_CONNESSIONI = (COL_NAME, COL_STRING, COL_PASSWORD, COL_SCHEMA)
+
+# --- ridimensionamento della finestra senza cornice ------------------------
+
+# Quanto e' spesso il bordo che risponde al ridimensionamento. Sotto i 4 px
+# diventa difficile da agganciare col mouse, sopra gli 8 si fa fatica a
+# cliccare quello che gli sta vicino.
+MARGINE_RESIZE = 6
+
+# Che cursore mostrare per ogni combinazione di bordi. Scritta per esteso
+# invece di dedurla dai flag: con otto casi la mappa si legge e si verifica,
+# il calcolo sui bit no.
+_SX = Qt.Edge.LeftEdge
+_DX = Qt.Edge.RightEdge
+_SU = Qt.Edge.TopEdge
+_GIU = Qt.Edge.BottomEdge
+FORME_CURSORE = {
+    _SX.value: Qt.CursorShape.SizeHorCursor,
+    _DX.value: Qt.CursorShape.SizeHorCursor,
+    _SU.value: Qt.CursorShape.SizeVerCursor,
+    _GIU.value: Qt.CursorShape.SizeVerCursor,
+    (_SX | _SU).value: Qt.CursorShape.SizeFDiagCursor,
+    (_DX | _GIU).value: Qt.CursorShape.SizeFDiagCursor,
+    (_DX | _SU).value: Qt.CursorShape.SizeBDiagCursor,
+    (_SX | _GIU).value: Qt.CursorShape.SizeBDiagCursor,
+}
+
+# Gli unici eventi che ci interessano. Il filtro sta sull'applicazione e vede
+# passare tutto, percio' lo scarto deve costare il meno possibile.
+_EVENTI_MOUSE = frozenset((QtCore.QEvent.Type.MouseMove,
+                           QtCore.QEvent.Type.MouseButtonPress))
+
+# Minimo della finestra. Era 800x600, mentre il layout ci sta in molto meno:
+# su uno schermo basso quell'altezza costringeva a tenere la finestra piu'
+# alta dello spazio utile. Non si scende fino al minimo che calcola Qt perche'
+# quello cambia con il contenuto e con la scheda aperta - misurati 393 e 445
+# in due stati diversi della stessa finestra - e arrivare al pelo vorrebbe
+# dire ritrovarsi con qualcosa tagliato in uno stato che non avevamo
+# misurato. Cosi' restano cento pixel di margine su quanto visto, e cento di
+# liberta' in piu' rispetto a prima.
+MINIMO_LARGHEZZA = 800
+MINIMO_ALTEZZA = 500
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -58,6 +99,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.worker = None
         self._ultimo_diff = None
         self._colonne_conn_sistemate = False
+        self._cursore_bordo = None
+        self._filtro_bordi_attivo = False
         self._sto_sistemando_conn = False
         self._upd_thread = None
         self._upd_worker = None
@@ -69,7 +112,7 @@ class MainWindow(QtWidgets.QMainWindow):
         bind_children(self.centralWidget(), self)
         # Solo il minimo: il .ui dichiarava minimo e massimo uguali, e la finestra
         # non si poteva ridimensionare — con un albero a cinque colonne era un problema.
-        self.setMinimumSize(self._ui.minimumSize())
+        self.setMinimumSize(MINIMO_LARGHEZZA, MINIMO_ALTEZZA)
         self.resize(self._ui.size())
 
         # Lo stile e' dell'applicazione (vedi app.py / theme.applica), cosi' vale
@@ -363,9 +406,104 @@ class MainWindow(QtWidgets.QMainWindow):
         title_bar.mouseMoveEvent = self._trascina
         title_bar.mouseDoubleClickEvent = lambda _event: self.toggle_maximized()
 
-        # Una finestra senza cornice non si ridimensiona dai bordi: serve una presa.
+        # La presa d'angolo resta come riserva: dove il sistema non supporta
+        # startSystemResize, e' l'unico modo di ridimensionare.
         self.size_grip = QtWidgets.QSizeGrip(self)
         self.size_grip.setFixedSize(16, 16)
+
+        # Il filtro per i bordi va sulla finestra di sistema, che pero' puo'
+        # non esistere ancora: ci pensa showEvent.
+        self._installa_filtro_bordi()
+
+    # --- ridimensionamento dai bordi ---------------------------------------
+    #
+    # Una finestra senza cornice non ha i bordi di sistema, percio' Qt non la
+    # ridimensiona dai lati: c'era solo la presa in basso a destra, e per
+    # cambiare larghezza bisognava passare da li'. Qui i bordi tornano
+    # sensibili tutti e otto.
+    #
+    # Il ridimensionamento vero lo fa il sistema operativo
+    # (startSystemResize): si ottengono lo snap ai lati dello schermo, il
+    # disegno fluido e il comportamento a cui l'utente e' abituato, che
+    # rifacendolo a mano spostando la geometria non si avrebbero. La presa
+    # d'angolo resta come riserva dove il sistema non lo supporta.
+
+    def _bordi_sotto_il_mouse(self, punto) -> "Qt.Edge":
+        """Quali bordi sono sotto il puntatore, se e' abbastanza vicino."""
+        bordi = Qt.Edge(0)
+        if self.isMaximized() or self.isFullScreen():
+            return bordi   # da massimizzata non si ridimensiona
+        if punto.x() <= MARGINE_RESIZE:
+            bordi |= Qt.Edge.LeftEdge
+        elif punto.x() >= self.width() - MARGINE_RESIZE:
+            bordi |= Qt.Edge.RightEdge
+        if punto.y() <= MARGINE_RESIZE:
+            bordi |= Qt.Edge.TopEdge
+        elif punto.y() >= self.height() - MARGINE_RESIZE:
+            bordi |= Qt.Edge.BottomEdge
+        return bordi
+
+    def _forma_cursore(self, bordi):
+        """La freccia che dice in che direzione si puo' tirare."""
+        return FORME_CURSORE.get(bordi.value)
+
+    def _aggiorna_cursore_bordo(self, bordi) -> None:
+        """Tiene un solo cursore sovrapposto per volta.
+
+        Il cursore si sovrascrive a livello di applicazione perche' sotto il
+        puntatore, vicino al bordo, c'e' un figlio qualsiasi con il suo
+        cursore: impostarlo sulla finestra non si vedrebbe.
+        """
+        forma = self._forma_cursore(bordi)
+        if forma == self._cursore_bordo:
+            return
+        if self._cursore_bordo is not None:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        if forma is not None:
+            QtWidgets.QApplication.setOverrideCursor(forma)
+        self._cursore_bordo = forma
+
+    def _installa_filtro_bordi(self) -> None:
+        """Mette il filtro sulla finestra di sistema, non sull'applicazione.
+
+        Due motivi, e il secondo l'ho imparato misurando. La QWindow riceve
+        gli eventi del mouse grezzi del sistema prima che Qt li smisti ai
+        widget, percio' li vediamo anche quando il puntatore e' sopra un
+        figlio vicino al bordo, e senza dover accendere il tracciamento del
+        mouse su tutti i figli.
+
+        E soprattutto vede passare solo gli eventi della finestra: con il
+        filtro sull'applicazione passava da qui in Python *ogni* evento di
+        ogni widget, e applicare un tema - che ne genera a migliaia - era
+        diventato quattro volte piu' lento.
+        """
+        if self._filtro_bordi_attivo:
+            return
+        maniglia = self.windowHandle()
+        if maniglia is None:
+            return   # la finestra di sistema non c'e' ancora: si riprova
+        maniglia.installEventFilter(self)
+        self._filtro_bordi_attivo = True
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # windowHandle() esiste solo da quando la finestra e' stata creata.
+        self._installa_filtro_bordi()
+
+    def eventFilter(self, oggetto, evento):
+        tipo = evento.type()
+        if tipo in _EVENTI_MOUSE and oggetto is self.windowHandle():
+            # position() e' gia' in coordinate della finestra.
+            bordi = self._bordi_sotto_il_mouse(evento.position().toPoint())
+            if tipo == QtCore.QEvent.Type.MouseMove:
+                self._aggiorna_cursore_bordo(bordi)
+            elif bordi and evento.button() == Qt.MouseButton.LeftButton:
+                maniglia = self.windowHandle()
+                if maniglia is not None and maniglia.startSystemResize(bordi):
+                    return True   # da qui lo porta avanti il sistema operativo
+        elif tipo == QtCore.QEvent.Type.Leave and oggetto is self.windowHandle():
+            self._aggiorna_cursore_bordo(Qt.Edge(0))
+        return super().eventFilter(oggetto, evento)
 
     def toggle_maximized(self):
         if self.isMaximized():
@@ -527,6 +665,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggle_maximized()
 
     def closeEvent(self, event):
+        # Il cursore sovrapposto e' globale: lasciandolo impostato, la freccia
+        # di ridimensionamento resterebbe anche sulle altre finestre.
+        self._aggiorna_cursore_bordo(Qt.Edge(0))
+        maniglia = self.windowHandle()
+        if maniglia is not None and self._filtro_bordi_attivo:
+            maniglia.removeEventFilter(self)
+            self._filtro_bordi_attivo = False
+
         # Da massimizzata si salva la dimensione normale: al riavvio si torna
         # massimizzati, e chi ripristina ritrova la finestra di prima.
         normale = self.normalGeometry() if self.isMaximized() else self.geometry()
