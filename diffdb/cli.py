@@ -33,6 +33,7 @@ from diffdb.connections import (
 from diffdb.paths import config_dir
 from diffdb.report import write_outputs
 from diffdb.snapshot_io import (
+    FORMAT_VERSION,
     SnapshotFile,
     compare_sources,
     fingerprint,
@@ -209,6 +210,19 @@ def verifica(percorso_script: str, token: str, schema, connections,
         meta = audit.leggi_meta(percorso_script)
     except (OSError, ValueError) as exc:
         print(str(exc))
+        return 2
+
+    formato = meta.get("formato_impronta")
+    if formato != FORMAT_VERSION:
+        # Confrontare impronte calcolate in modo diverso direbbe "l'ambiente
+        # e' cambiato" anche su un ambiente immobile: un falso allarme che
+        # porta a rigenerare per niente, o a non fidarsi piu' del controllo.
+        print(f"Lo script e' stato generato con DiFFDB "
+              f"{meta.get('versione_diffdb') or 'precedente'}, che calcolava "
+              f"l'impronta in un altro modo (formato {formato or 1} contro "
+              f"{FORMAT_VERSION}).")
+        print("Confrontarla con quella di adesso non direbbe niente di vero: "
+              "rigenera lo script con questa versione e riverifica.")
         return 2
 
     sorgente = resolve(token, schema, connections)

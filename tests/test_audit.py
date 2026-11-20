@@ -4,6 +4,8 @@ Lo script .sql finisce in produzione: deve dire da dove viene, e deve permettere
 di scoprire che l'ambiente e' cambiato dopo che e' stato generato.
 """
 
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -16,7 +18,10 @@ from diffdb import __version__, audit  # noqa: E402
 from diffdb.diff_DB import compare_environments, generate_sql_scripts  # noqa: E402
 from diffdb.report import write_sql, write_sql_script  # noqa: E402
 from diffdb.schema_snapshot import snapshot_connection  # noqa: E402
-from diffdb.snapshot_io import fingerprint  # noqa: E402
+from diffdb.snapshot_io import FORMAT_VERSION, fingerprint  # noqa: E402
+
+# La riga di meta si riscrive per simulare uno script generato nel passato.
+_RIGA_META = re.compile(r"^--\s*diffdb-meta:.*$", re.MULTILINE)
 
 # Due differenze, entrambe allineabili con un ADD COLUMN: servono a distinguere
 # un export completo da uno parziale.
@@ -164,3 +169,27 @@ def test_verify_non_stampa_la_password(script, capsys):
     verifica(str(script), "postgresql://app:segretissima@host:5432/db", None, [])
 
     assert "segretissima" not in capsys.readouterr().out
+
+
+def test_verify_non_grida_al_lupo_se_l_impronta_non_e_confrontabile(script, ambienti):
+    """Quando il formato degli snapshot cresce, l'impronta dello stesso
+    ambiente cambia senza che sia cambiato niente: uno script generato da una
+    versione precedente si verificherebbe come "ambiente CAMBIATO, rigenera",
+    su un ambiente immobile. Un falso allarme che insegna a non fidarsi del
+    controllo, cioe' il contrario di quello che serve."""
+    from diffdb.cli import verifica
+
+    testo = script.read_text(encoding="utf-8")
+    meta = audit.leggi_meta(script)
+    meta["formato_impronta"] = 1              # com'era in uno script del passato
+    meta["versione_diffdb"] = "1.4.3"
+    script.write_text(
+        _RIGA_META.sub(audit.PREFISSO_META + json.dumps(meta, sort_keys=True), testo),
+        encoding="utf-8")
+
+    assert verifica(str(script), ambienti[1], None, []) == 2
+
+
+def test_l_intestazione_dice_come_ha_calcolato_l_impronta(script):
+    """Senza questo dato il controllo di sopra non si puo' fare."""
+    assert audit.leggi_meta(script)["formato_impronta"] == FORMAT_VERSION

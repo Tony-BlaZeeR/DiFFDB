@@ -22,7 +22,7 @@ from pathlib import Path
 
 from diffdb import __version__
 from diffdb.diff_DB import DiffResult
-from diffdb.snapshot_io import fingerprint
+from diffdb.snapshot_io import FORMAT_VERSION, fingerprint
 from diffdb.urls import mask_password
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,10 @@ def intestazione(diff: DiffResult, target_env: str, origine: str | None = None,
 
     meta = {
         "versione_diffdb": __version__,
+        # Come e' stata calcolata l'impronta. Quando il formato cresce,
+        # l'impronta dello stesso ambiente cambia senza che sia cambiato
+        # niente: --verify deve saperlo dire invece di gridare al lupo.
+        "formato_impronta": FORMAT_VERSION,
         "generato": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "generato_da": _chi(),
         "tipo": "annullamento" if annullamento else "allineamento",
