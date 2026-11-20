@@ -27,6 +27,31 @@ SECTION_TITLES = {
 
 COLONNE = ["Oggetto", "Tipo", "Campo", "Differenza", "Presente in", "Mancante in", "Dettaglio"]
 
+# Due limiti del formato .xlsx, entrambi dannosi se ignorati.
+#
+# I caratteri di controllo non sono ammessi, e openpyxl solleva
+# IllegalCharacterError: bastava uno, arrivato da un default o da un CHECK,
+# per non ottenere *nessun* file. Si sostituiscono con il carattere di
+# sostituzione Unicode, che si vede nel foglio.
+#
+# Le celle si fermano a 32767 caratteri, e openpyxl tagliava in silenzio: un
+# dettaglio lungo perdeva la coda senza dirlo. Ora il taglio e' scritto nella
+# cella, perche' un report che perde pezzi senza avvisare e' peggio di uno che
+# lo dichiara.
+LIMITE_CELLA = 32767
+_CONTROLLO = re.compile(r"[\000-\010\013\014\016-\037]")
+
+
+def _cella(valore):
+    """Rende un valore scrivibile in un foglio .xlsx senza perdite mute."""
+    if not isinstance(valore, str):
+        return valore
+    pulito = _CONTROLLO.sub("�", valore)
+    if len(pulito) > LIMITE_CELLA:
+        avviso = f" [...troncato: in origine {len(pulito)} caratteri]"
+        pulito = pulito[:LIMITE_CELLA - len(avviso)] + avviso
+    return pulito
+
 
 def write_excel(diff, output_dir: str) -> str:
     """Solo il report Excel. Restituisce il percorso scritto."""
@@ -155,7 +180,7 @@ def generate_excel_report(diff: DiffResult, filename: str) -> None:
     with pd.ExcelWriter(filename) as writer:
         _foglio_informazioni(diff).to_excel(writer, sheet_name="Informazioni", index=False)
         for sheet, diffs in sections.items():
-            rows = [d.as_row() for d in diffs]
+            rows = [{k: _cella(v) for k, v in d.as_row().items()} for d in diffs]
             pd.DataFrame(rows, columns=COLONNE).to_excel(writer, sheet_name=sheet, index=False)
 
     logger.info("Report Excel salvato in '%s'.", filename)
