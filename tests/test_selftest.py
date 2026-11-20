@@ -84,3 +84,13 @@ def test_copre_cryptography_e_oracle():
     assert "oracledb" in nomi
     assert "cryptography" in nomi
     assert "cryptography.hazmat.bindings._rust" in nomi
+
+
+def test_copre_anche_l_export_excel():
+    """La seconda regressione dello stesso tipo: numpy impacchettato a meta'
+    faceva fallire pandas, e l'app diceva "manca pandas" consigliando un pip
+    install inutile. Da sorgente nessun test poteva accorgersene."""
+    nomi = [nome for nome, _ in selftest.MODULI]
+    assert "numpy" in nomi
+    assert "pandas" in nomi
+    assert "openpyxl" in nomi

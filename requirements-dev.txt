@@ -13,6 +13,10 @@ ruff==0.9.6
 pip-audit==2.9.0
 cyclonedx-bom==6.1.1
 
-pyinstaller==6.11.1
+# 6.11.1 e' di fine 2024 e il suo hook per numpy non conosce la 2.5: nel
+# bundle finiva un numpy incompleto (mancava numpy._core._exceptions), e
+# pandas non partendo senza numpy faceva dire all'export Excel "manca
+# pandas". Verificato riproducendo la build con le due versioni.
+pyinstaller==6.21.0
 build==1.2.2
 hatchling==1.27.0

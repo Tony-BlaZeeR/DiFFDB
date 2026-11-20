@@ -32,6 +32,13 @@ MODULI: list[tuple[str, str]] = [
     # sembra sano e poi fallisce con DPY-3016 davanti all'utente.
     ("cryptography", "cifratura per Oracle thin"),
     ("cryptography.hazmat.bindings._rust", "estensione nativa di cryptography"),
+    # L'export Excel. pandas non parte senza numpy, e un numpy impacchettato
+    # a meta' lo faceva fallire con "Unable to import required dependencies":
+    # l'app lo riportava come "manca pandas" e consigliava un pip install che
+    # non serviva. Da sorgente non si vedeva, come per i driver.
+    ("numpy", "calcolo per il report Excel"),
+    ("pandas", "report Excel"),
+    ("openpyxl", "scrittura del file .xlsx"),
 ]
 
 # Driver che su una piattaforma sono assenti di proposito: qui l'assenza e'
