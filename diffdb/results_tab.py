@@ -11,7 +11,7 @@ import logging
 
 from diffdb import preferences, theme
 from diffdb.diff_DB import MISSING
-from diffdb.qt import Qt, QtGui, QtWidgets
+from diffdb.qt import Qt, QtCore, QtGui, QtWidgets
 from diffdb.widgets import Riquadro
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,11 @@ COL_DETTAGLIO = 5
 # Con quale nome si salvano le larghezze di questo albero.
 NOME_COLONNE = "risultati"
 
+# Sotto questa larghezza una colonna non si legge piu': quando le proporzioni
+# porterebbero sotto, si tiene il minimo e si lascia comparire la barra di
+# scorrimento orizzontale. Meglio scorrere che avere colonne illeggibili.
+MINIMO_COLONNA = 60
+
 # I colori delle tre direzioni arrivano dal tema attivo (theme.colori_diff),
 # cosi' seguono variante e chiaro/scuro; sono scelti per restare a >=4.5:1 sul
 # fondo dell'albero (WCAG AA) in ogni tavolozza.
@@ -55,6 +60,7 @@ class ResultsTab(QtWidgets.QWidget):
         self._diff = None
         self._colonne_sistemate = False
         self._sto_sistemando = False
+        self._proporzioni = None
         self._build_ui()
 
     # --- costruzione UI ---------------------------------------------------
@@ -141,6 +147,7 @@ class ResultsTab(QtWidgets.QWidget):
         self.tree.setAlternatingRowColors(True)
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.header().sectionResized.connect(self._ricorda_colonne)
+        self.tree.viewport().installEventFilter(self)
         layout.addWidget(self.tree)
 
         bottom = QtWidgets.QHBoxLayout()
@@ -324,30 +331,100 @@ class ResultsTab(QtWidgets.QWidget):
             salvate = preferences.larghezze_colonne(
                 NOME_COLONNE, self.tree.columnCount())
             if salvate:
+                # Le larghezze salvate valgono come pesi: la finestra di oggi
+                # non e' necessariamente larga come quella dell'altra volta.
                 for colonna, larghezza in enumerate(salvate):
                     self.tree.setColumnWidth(colonna, larghezza)
-                return
-            for colonna in range(self.tree.columnCount()):
-                self.tree.resizeColumnToContents(colonna)
-            self._allarga_ultima_colonna()
+            else:
+                for colonna in range(self.tree.columnCount()):
+                    self.tree.resizeColumnToContents(colonna)
+            self._proporzioni = self._proporzioni_correnti()
         finally:
             self._sto_sistemando = False
 
-    def _allarga_ultima_colonna(self) -> None:
-        """Il dettaglio si prende lo spazio avanzato, senza sbordare.
+        self._distribuisci_colonne()
 
-        Serve a non costringere a scorrere in orizzontale appena si apre un
-        confronto, che era il motivo per cui prima l'ultima colonna stava in
-        Stretch.
+    def _proporzioni_correnti(self) -> list[float]:
+        """Le larghezze attuali espresse come frazioni del totale."""
+        larghezze = [max(1, self.tree.columnWidth(colonna))
+                     for colonna in range(self.tree.columnCount())]
+        totale = sum(larghezze)
+        return [larghezza / totale for larghezza in larghezze]
+
+    def _distribuisci_colonne(self) -> None:
+        """Riparte la larghezza disponibile fra le colonne.
+
+        Le colonne restano trascinabili, ma quello che si imposta a mano vale
+        come proporzione: allargando la finestra crescono con lei invece di
+        lasciare spazio vuoto a destra, e restringendola si stringono insieme
+        senza troncare tutto sull'ultima.
+
+        Quando una colonna finirebbe sotto il minimo leggibile si tiene il
+        minimo: la somma supera lo spazio e Qt mostra la barra di
+        scorrimento orizzontale, che e' preferibile a colonne illeggibili.
+        """
+        if self._proporzioni is None or self._sto_sistemando:
+            return
+        disponibile = self.tree.viewport().width()
+        if disponibile <= 0:
+            return   # non ancora impaginata: ci riproveremo al prossimo resize
+
+        larghezze = [max(MINIMO_COLONNA, round(proporzione * disponibile))
+                     for proporzione in self._proporzioni]
+        # L'arrotondamento per colonna lascia scoperto o fa sforare qualche
+        # pixel, e un solo pixel di troppo basta a far comparire la barra di
+        # scorrimento: la differenza si aggiusta sull'ultima colonna. Se lo
+        # sforamento viene dai minimi, l'ultima non riesce ad assorbirlo tutto
+        # e la barra compare per il motivo giusto.
+        scarto = disponibile - sum(larghezze)
+        if scarto > 0:
+            larghezze[-1] += scarto
+        elif scarto < 0:
+            riducibile = max(0, larghezze[-1] - MINIMO_COLONNA)
+            larghezze[-1] -= min(-scarto, riducibile)
+
+        self._sto_sistemando = True
+        try:
+            for colonna, larghezza in enumerate(larghezze):
+                self.tree.setColumnWidth(colonna, larghezza)
+        finally:
+            self._sto_sistemando = False
+
+    def _riempi_con_ultima(self, toccata=None) -> None:
+        """Dopo una regolazione a mano, lo spazio liberato va all'ultima.
+
+        Senza questo, stringendo una colonna restava un vuoto a destra fino
+        al ridimensionamento successivo della finestra. Ridistribuire tutto
+        non va bene: la colonna appena trascinata tornerebbe indietro sotto
+        le dita. Si sposta quindi solo l'ultima, che e' il dettaglio.
+
+        Se e' l'ultima che si sta trascinando non si tocca niente: allargarla
+        oltre lo spazio disponibile e' un modo legittimo di chiedere la barra
+        di scorrimento.
         """
         ultima = self.tree.columnCount() - 1
+        if toccata is None or toccata == ultima:
+            return
         disponibile = self.tree.viewport().width()
-        occupato = sum(self.tree.columnWidth(c) for c in range(ultima))
-        resto = disponibile - occupato
-        if resto > self.tree.columnWidth(ultima):
+        altre = sum(self.tree.columnWidth(colonna) for colonna in range(ultima))
+        resto = disponibile - altre
+        if resto < MINIMO_COLONNA:
+            return   # non ci sta: meglio la barra che una colonna illeggibile
+        self._sto_sistemando = True
+        try:
             self.tree.setColumnWidth(ultima, resto)
+        finally:
+            self._sto_sistemando = False
 
-    def _ricorda_colonne(self, *_argomenti) -> None:
+    def eventFilter(self, oggetto, evento):
+        # Il viewport cambia dimensione anche quando la finestra viene
+        # ridimensionata: e' il momento in cui ridistribuire.
+        if (evento.type() == QtCore.QEvent.Type.Resize
+                and oggetto is self.tree.viewport()):
+            self._distribuisci_colonne()
+        return super().eventFilter(oggetto, evento)
+
+    def _ricorda_colonne(self, toccata=None, *_argomenti) -> None:
         """Salva le larghezze quando l'utente le cambia trascinando.
 
         Due casi da scartare, e il secondo mi era sfuggito: oltre ai nostri
@@ -358,6 +435,11 @@ class ResultsTab(QtWidgets.QWidget):
         """
         if self._sto_sistemando or not self._colonne_sistemate:
             return   # le impostiamo noi, o Qt sta ancora impaginando
+
+        self._riempi_con_ultima(toccata)
+        # Quello che sceglie l'utente diventa la nuova proporzione, cosi'
+        # ridimensionando la finestra la sua scelta viene rispettata.
+        self._proporzioni = self._proporzioni_correnti()
         preferences.imposta_larghezze_colonne(
             NOME_COLONNE,
             [self.tree.columnWidth(c) for c in range(self.tree.columnCount())])

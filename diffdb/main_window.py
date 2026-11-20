@@ -45,6 +45,14 @@ COL_NAME, COL_STRING, COL_PASSWORD, COL_SCHEMA, COL_EDIT, COL_DELETE = range(6)
 NOME_COLONNE_CONNESSIONI = "connessioni"
 LARGHE_CONNESSIONI = (COL_NAME, COL_STRING, COL_PASSWORD, COL_SCHEMA)
 
+# La colonna che assorbe lo spazio liberato da una regolazione a mano: la
+# stringa di connessione e' quella lunga, le altre hanno misure prevedibili.
+COL_ELASTICA = COL_STRING
+
+# Sotto questa larghezza una colonna non si legge: si tiene il minimo e si
+# lascia comparire la barra di scorrimento orizzontale.
+MINIMO_COLONNA = 60
+
 # --- ridimensionamento della finestra senza cornice ------------------------
 
 # Quanto e' spesso il bordo che risponde al ridimensionamento. Sotto i 4 px
@@ -102,6 +110,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._cursore_bordo = None
         self._filtro_bordi_attivo = False
         self._sto_sistemando_conn = False
+        self._proporzioni_conn = None
         self._upd_thread = None
         self._upd_worker = None
         self.output_dir = preferences.cartella_output(str(config_dir()))
@@ -252,19 +261,87 @@ class MainWindow(QtWidgets.QMainWindow):
             salvate = preferences.larghezze_colonne(
                 NOME_COLONNE_CONNESSIONI, len(LARGHE_CONNESSIONI))
             if salvate:
-                for column, larghezza in zip(LARGHE_CONNESSIONI, salvate, strict=False):
+                # Valgono come pesi: la finestra di oggi non e'
+                # necessariamente larga come quella dell'altra volta.
+                for column, larghezza in zip(LARGHE_CONNESSIONI, salvate,
+                                             strict=False):
                     table.setColumnWidth(column, larghezza)
-                return
-            table.resizeColumnsToContents()
-            avanzo = table.viewport().width() - sum(
-                table.columnWidth(c) for c in range(table.columnCount()))
-            if avanzo > 0:
-                table.setColumnWidth(COL_STRING,
-                                     table.columnWidth(COL_STRING) + avanzo)
+            else:
+                table.resizeColumnsToContents()
+            self._proporzioni_conn = self._proporzioni_connessioni(table)
         finally:
             self._sto_sistemando_conn = False
 
-    def _ricorda_colonne_connessioni(self, *_argomenti) -> None:
+        table.viewport().installEventFilter(self)
+        self._distribuisci_colonne_connessioni()
+
+    def _spazio_distribuibile(self, table) -> int:
+        """Lo spazio che resta togliendo le colonne dei pulsanti.
+
+        Quelle due stanno aderenti alle icone e non partecipano al riparto:
+        allargarle non servirebbe a nulla.
+        """
+        fissi = sum(table.columnWidth(colonna)
+                    for colonna in (COL_EDIT, COL_DELETE))
+        return table.viewport().width() - fissi
+
+    def _proporzioni_connessioni(self, table) -> list[float]:
+        larghezze = [max(1, table.columnWidth(colonna))
+                     for colonna in LARGHE_CONNESSIONI]
+        totale = sum(larghezze)
+        return [larghezza / totale for larghezza in larghezze]
+
+    def _distribuisci_colonne_connessioni(self) -> None:
+        """Riparte fra le colonne lo spazio della finestra.
+
+        Stesso principio dell'albero dei risultati: quello che si imposta a
+        mano vale come proporzione, cosi' la tabella continua a riempire la
+        finestra quando la si ridimensiona invece di lasciare un vuoto a
+        destra.
+        """
+        if self._proporzioni_conn is None or self._sto_sistemando_conn:
+            return
+        table = self.conn_table()
+        disponibile = self._spazio_distribuibile(table)
+        if disponibile <= 0:
+            return
+
+        larghezze = [max(MINIMO_COLONNA, round(proporzione * disponibile))
+                     for proporzione in self._proporzioni_conn]
+        scarto = disponibile - sum(larghezze)
+        indice_elastica = LARGHE_CONNESSIONI.index(COL_ELASTICA)
+        if scarto > 0:
+            larghezze[indice_elastica] += scarto
+        elif scarto < 0:
+            riducibile = max(0, larghezze[indice_elastica] - MINIMO_COLONNA)
+            larghezze[indice_elastica] -= min(-scarto, riducibile)
+
+        self._sto_sistemando_conn = True
+        try:
+            for colonna, larghezza in zip(LARGHE_CONNESSIONI, larghezze,
+                                          strict=False):
+                table.setColumnWidth(colonna, larghezza)
+        finally:
+            self._sto_sistemando_conn = False
+
+    def _riempi_con_elastica(self, table, toccata=None) -> None:
+        """Lo spazio liberato da una regolazione va alla stringa di
+        connessione, non ridistribuito su tutte: la colonna appena
+        trascinata tornerebbe indietro sotto le dita."""
+        if toccata is None or toccata == COL_ELASTICA:
+            return
+        altre = sum(table.columnWidth(colonna) for colonna in LARGHE_CONNESSIONI
+                    if colonna != COL_ELASTICA)
+        resto = self._spazio_distribuibile(table) - altre
+        if resto < MINIMO_COLONNA:
+            return
+        self._sto_sistemando_conn = True
+        try:
+            table.setColumnWidth(COL_ELASTICA, resto)
+        finally:
+            self._sto_sistemando_conn = False
+
+    def _ricorda_colonne_connessioni(self, toccata=None, *_argomenti) -> None:
         """Salva le larghezze scelte trascinando, e solo quelle.
 
         Come per l'albero dei risultati: Qt emette sectionResized anche
@@ -273,6 +350,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._sto_sistemando_conn or not self._colonne_conn_sistemate:
             return   # le impostiamo noi, o Qt sta ancora impaginando
         tabella = self.conn_table()
+        self._riempi_con_elastica(tabella, toccata)
+        self._proporzioni_conn = self._proporzioni_connessioni(tabella)
         preferences.imposta_larghezze_colonne(
             NOME_COLONNE_CONNESSIONI,
             [tabella.columnWidth(c) for c in LARGHE_CONNESSIONI])
@@ -503,6 +582,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     return True   # da qui lo porta avanti il sistema operativo
         elif tipo == QtCore.QEvent.Type.Leave and oggetto is self.windowHandle():
             self._aggiorna_cursore_bordo(Qt.Edge(0))
+        elif tipo == QtCore.QEvent.Type.Resize and self._colonne_conn_sistemate:
+            if oggetto is self.conn_table().viewport():
+                self._distribuisci_colonne_connessioni()
         return super().eventFilter(oggetto, evento)
 
     def toggle_maximized(self):

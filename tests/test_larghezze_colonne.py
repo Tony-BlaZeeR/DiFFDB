@@ -131,15 +131,33 @@ def test_quello_che_trascina_l_utente_viene_salvato(app, impostazioni_isolate, d
     assert salvate[COL_OGGETTO] == 277
 
 
-def test_alla_riapertura_si_riprendono_le_larghezze(app, impostazioni_isolate, diff):
-    from diffdb.results_tab import COL_OGGETTO, NOME_COLONNE, ResultsTab
+def test_alla_riapertura_si_riprendono_le_proporzioni(app, impostazioni_isolate, diff):
+    """Si ripristinano le proporzioni, non i pixel.
 
-    preferences.imposta_larghezze_colonne(NOME_COLONNE, [250, 120, 130, 90, 90, 400])
+    Le larghezze salvate valgono come pesi: la finestra di oggi non e'
+    necessariamente larga come quella dell'altra volta, e rimettere i pixel
+    di allora lascerebbe un vuoto a destra o farebbe sforare.
+    """
+    from diffdb.results_tab import COL_DETTAGLIO, COL_OGGETTO, NOME_COLONNE, ResultsTab
+
+    salvate = [250, 120, 130, 90, 90, 400]
+    preferences.imposta_larghezze_colonne(NOME_COLONNE, salvate)
 
     tab = ResultsTab()
+    tab.resize(1200, 500)
+    tab.show()
+    app.processEvents()
     tab.show_result(diff)
+    app.processEvents()
 
-    assert tab.tree.columnWidth(COL_OGGETTO) == 250
+    larghezze = [tab.tree.columnWidth(c) for c in range(tab.tree.columnCount())]
+    # L'ordine di grandezza salvato va rispettato: il dettaglio e' la piu'
+    # larga, l'oggetto la seconda.
+    assert larghezze[COL_DETTAGLIO] == max(larghezze)
+    assert larghezze[COL_OGGETTO] == sorted(larghezze)[-2]
+    # E la tabella riempie la finestra, che e' il punto delle proporzioni.
+    assert _vuoto_a_destra(tab.tree) == 0
+    tab.close()
 
 
 # --- la tabella delle connessioni ------------------------------------------
@@ -169,7 +187,6 @@ def test_le_colonne_delle_connessioni_sono_trascinabili(app, impostazioni_isolat
 
 def test_le_larghezze_delle_connessioni_si_ricordano(app, impostazioni_isolate):
     from diffdb.main_window import (
-        COL_NAME,
         LARGHE_CONNESSIONI,
         NOME_COLONNE_CONNESSIONI,
         MainWindow,
@@ -179,8 +196,117 @@ def test_le_larghezze_delle_connessioni_si_ricordano(app, impostazioni_isolate):
         NOME_COLONNE_CONNESSIONI, [200, 300, 110, 120])
 
     finestra = MainWindow()
+    finestra.resize(1200, 700)
+    finestra.show()
+    app.processEvents()
     try:
-        assert finestra.conn_table().columnWidth(COL_NAME) == 200
+        tabella = finestra.conn_table()
+        larghezze = [tabella.columnWidth(c) for c in LARGHE_CONNESSIONI]
+        # Come per i risultati: contano le proporzioni, non i pixel salvati.
+        # La stringa di connessione era la piu' larga e deve restarlo.
+        assert larghezze[1] == max(larghezze)
+        assert larghezze[0] == sorted(larghezze)[-2]
         assert len(LARGHE_CONNESSIONI) == 4
+    finally:
+        finestra.close()
+
+
+# --- adattamento alla finestra ----------------------------------------------
+#
+# Le colonne devono seguire la finestra: prima restavano della larghezza
+# calcolata una volta, lasciando spazio vuoto a destra appena si allargava.
+# Quello che si imposta a mano vale come proporzione, cosi' la regolazione
+# sopravvive al ridimensionamento.
+
+def _vuoto_a_destra(albero):
+    larghezze = sum(albero.columnWidth(c) for c in range(albero.columnCount()))
+    return albero.viewport().width() - larghezze
+
+
+def test_le_colonne_seguono_la_finestra(app, impostazioni_isolate, diff):
+    from diffdb.results_tab import ResultsTab
+
+    tab = ResultsTab()
+    tab.resize(900, 500)
+    tab.show()
+    app.processEvents()
+    tab.show_result(diff)
+    app.processEvents()
+
+    for larghezza in (1400, 1800, 1000, 820):
+        tab.resize(larghezza, 500)
+        app.processEvents()
+        assert _vuoto_a_destra(tab.tree) == 0, (
+            f"a {larghezza} px restano {_vuoto_a_destra(tab.tree)} px vuoti")
+    tab.close()
+
+
+def test_la_regolazione_a_mano_sopravvive_al_ridimensionamento(
+        app, impostazioni_isolate, diff):
+    """Stringo una colonna, allargo la finestra: deve restare la piu'
+    stretta, non tornare come prima."""
+    from diffdb.results_tab import COL_OGGETTO, ResultsTab
+
+    tab = ResultsTab()
+    tab.resize(1200, 500)
+    tab.show()
+    app.processEvents()
+    tab.show_result(diff)
+    app.processEvents()
+
+    tab.tree.setColumnWidth(COL_OGGETTO, 80)
+    app.processEvents()
+    assert _vuoto_a_destra(tab.tree) == 0, "dopo la regolazione resta un vuoto"
+
+    tab.resize(1800, 500)
+    app.processEvents()
+    larghezze = [tab.tree.columnWidth(c) for c in range(tab.tree.columnCount())]
+    assert larghezze[COL_OGGETTO] == min(larghezze)
+    tab.close()
+
+
+def test_se_il_contenuto_non_ci_sta_si_puo_scorrere(app, impostazioni_isolate, diff):
+    """L'alternativa a stringere le colonne all'illeggibile."""
+    from diffdb.results_tab import COL_DETTAGLIO, ResultsTab
+
+    tab = ResultsTab()
+    tab.resize(900, 500)
+    tab.show()
+    app.processEvents()
+    tab.show_result(diff)
+    app.processEvents()
+    assert tab.tree.horizontalScrollBar().maximum() == 0, "si scorre senza motivo"
+
+    tab.tree.setColumnWidth(COL_DETTAGLIO, 2000)
+    app.processEvents()
+    assert tab.tree.horizontalScrollBar().maximum() > 0, (
+        "colonne piu' larghe della finestra ma non si puo' scorrere")
+    tab.close()
+
+
+def test_anche_le_connessioni_seguono_la_finestra(app, impostazioni_isolate):
+    from diffdb.main_window import (
+        COL_DELETE,
+        COL_EDIT,
+        LARGHE_CONNESSIONI,
+        TAB_CONFIGURAZIONE,
+        MainWindow,
+    )
+
+    finestra = MainWindow()
+    finestra.resize(1000, 700)
+    finestra.show()
+    finestra.tabWidget.setCurrentIndex(TAB_CONFIGURAZIONE)
+    app.processEvents()
+    tabella = finestra.conn_table()
+
+    try:
+        for larghezza in (1500, 1900, 1100):
+            finestra.resize(larghezza, 700)
+            app.processEvents()
+            pulsanti = sum(tabella.columnWidth(c) for c in (COL_EDIT, COL_DELETE))
+            colonne = sum(tabella.columnWidth(c) for c in LARGHE_CONNESSIONI)
+            vuoto = tabella.viewport().width() - pulsanti - colonne
+            assert vuoto == 0, f"a {larghezza} px restano {vuoto} px vuoti"
     finally:
         finestra.close()
