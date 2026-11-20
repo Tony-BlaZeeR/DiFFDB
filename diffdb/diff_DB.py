@@ -18,10 +18,14 @@ from sqlalchemy.schema import AddConstraint, CreateIndex, CreateTable
 from diffdb.config.dialectConfig import templates_for
 from diffdb.rules import NESSUNA, Regole
 from diffdb.schema_snapshot import (
+    ATTIVO,
+    DISATTIVATO,
     Snapshot,
     check_signature,
     expand,  # noqa: F401  (ri-esportata: era definita qui)
+    fk_attributes,
     fk_signature,
+    index_attributes,
     index_signature,
     normalize_sql,
     routine_key,
@@ -38,6 +42,9 @@ TYPE_MISMATCH = "tipo diverso"
 NULLABILITY_MISMATCH = "nullability diversa"
 DEFAULT_MISMATCH = "default diverso"
 DEFINITION_MISMATCH = "definizione diversa"
+COMMENT_MISMATCH = "commento diverso"
+STATE_MISMATCH = "stato diverso"
+UNREADABLE = "non leggibile"
 
 
 @dataclass
@@ -169,15 +176,29 @@ def compare_snapshots(snap1: Snapshot, snap2: Snapshot,
     result = DiffResult(snapshot1=snap1, snapshot2=snap2, regole=regole)
     e1, e2 = snap1.env_name, snap2.env_name
 
-    tables1, tables2 = set(snap1.tables), set(snap2.tables)
+    # Una tabella che non si e' riusciti a leggere non e' una tabella assente:
+    # si tiene fuori dal confronto e si dichiara per quello che e', altrimenti
+    # il report direbbe "mancante" di una tabella che invece c'e'.
+    result.tables.extend(_tabelle_illeggibili(snap1, snap2))
+    cieche = set(snap1.tabelle_illeggibili) | set(snap2.tabelle_illeggibili)
+
+    # Cosa si puo' confrontare si decide una volta sola e non tabella per
+    # tabella: la risposta e' la stessa per tutte, e il motivo va detto una
+    # volta, non una per tabella.
+    commenti = commenti_confrontabili(snap1, snap2)
+    attributi = attributi_confrontabili(snap1, snap2)
+
+    tables1, tables2 = set(snap1.tables) - cieche, set(snap2.tables) - cieche
     for table in sorted(tables2 - tables1):
         result.tables.append(Difference("table", table, MISSING, missing_in=e1, present_in=e2))
     for table in sorted(tables1 - tables2):
         result.tables.append(Difference("table", table, MISSING, missing_in=e2, present_in=e1))
 
     for table in sorted(tables1 & tables2):
-        result.tables.extend(_compare_columns(table, snap1, snap2))
-        result.constraints.extend(_compare_constraints(table, snap1, snap2))
+        if commenti:
+            result.tables.extend(_compare_table_comment(table, snap1, snap2))
+        result.tables.extend(_compare_columns(table, snap1, snap2, commenti))
+        result.constraints.extend(_compare_constraints(table, snap1, snap2, attributi))
 
     result.views = _compare_views(snap1, snap2)
     result.sequences = _compare_sequences(snap1, snap2)
@@ -211,20 +232,112 @@ def _applica_regole(result: DiffResult, regole: Regole) -> DiffResult:
     return result
 
 
-def _compare_columns(table: str, snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
+# Per questi vincoli l'identita' non racconta tutto: la funzione dice cosa
+# resta da confrontare sugli oggetti che combaciano.
+ATTRIBUTI_CONFRONTATI = {
+    "index": index_attributes,
+    "foreign_key": fk_attributes,
+}
+
+ETICHETTA_VINCOLO = {
+    "index": "Indice con ordinamento o condizione diversi",
+    "foreign_key": "Chiave esterna con azioni referenziali diverse",
+}
+
+
+def attributi_confrontabili(snap1: Snapshot, snap2: Snapshot) -> bool:
+    """Se uno dei due snapshot viene da un file che non li contiene, no.
+
+    Gli snapshot salvati prima non portavano azioni referenziali ne' dettagli
+    degli indici. Confrontarli darebbe "nessuna azione" da una parte e
+    "ON DELETE CASCADE" dall'altra: una differenza inventata dal formato del
+    file, non dai database. Meglio non confrontarli e dirlo una volta.
+    """
+    if snap1.attributi_vincoli_letti and snap2.attributi_vincoli_letti:
+        return True
+    vecchi = [s.env_name for s in (snap1, snap2) if not s.attributi_vincoli_letti]
+    logger.warning(
+        "Azioni delle chiavi esterne e dettagli degli indici non confrontati: "
+        "%s viene da uno snapshot salvato prima che venissero registrati. "
+        "Rigeneralo per averli.", " e ".join(vecchi))
+    return False
+
+
+def commenti_confrontabili(snap1: Snapshot, snap2: Snapshot) -> bool:
+    """Solo se da entrambe le parti i commenti si sono davvero letti.
+
+    SQLite non ha i commenti e gli snapshot salvati prima non li registravano:
+    in quei casi il commento non e' "vuoto", e' "non si sa". Confrontarlo
+    direbbe che ogni tabella commentata ha perso il commento nell'altro
+    ambiente - una differenza inventata dal motore, non dai database.
+    """
+    if snap1.commenti_letti and snap2.commenti_letti:
+        return True
+    ciechi = [s.env_name for s in (snap1, snap2) if not s.commenti_letti]
+    logger.info(
+        "Commenti di tabelle e colonne non confrontati: non sono disponibili "
+        "in %s.", " e ".join(ciechi))
+    return False
+
+
+def _tabelle_illeggibili(snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
+    """Una riga per ogni tabella rimasta fuori dalla fotografia.
+
+    E' un buco nel confronto, non una differenza fra i due ambienti: ma
+    tacerlo e' peggio, perche' chi legge il report lo prenderebbe per
+    completo.
+    """
+    return [
+        Difference("table", nome, UNREADABLE, present_in=snap.env_name,
+                   detail=f"non confrontata: {snap.env_name} non ha saputo "
+                          f"leggerne la struttura ({motivo})")
+        for snap in (snap1, snap2)
+        for nome, motivo in sorted(snap.tabelle_illeggibili.items())
+    ]
+
+
+def _compare_table_comment(table: str, snap1: Snapshot,
+                           snap2: Snapshot) -> list[Difference]:
+    """Il commento della tabella. Non e' documentazione di contorno: e' quello
+    che un collega legge nel catalogo per capire a cosa serve la tabella, e
+    due ambienti che lo hanno diverso raccontano due cose diverse."""
+    c1, c2 = snap1.table_comment(table), snap2.table_comment(table)
+    if c1 == c2:
+        return []
+    e1, e2 = snap1.env_name, snap2.env_name
+    return [Difference("table", table, COMMENT_MISMATCH,
+                       detail=f"{e1}: {c1 or '(nessuno)'} | {e2}: {c2 or '(nessuno)'}")]
+
+
+def _dialetto_comune(snap1: Snapshot, snap2: Snapshot):
+    """Il dialetto dei due ambienti, se e' lo stesso; altrimenti None.
+
+    Le firme native dei tipi sono confrontabili solo fra ambienti dello stesso
+    motore: fra dialetti diversi ogni colonna risulterebbe cambiata soltanto
+    per come i due server scrivono lo stesso tipo.
+    """
+    if snap1.dialect != snap2.dialect:
+        return None
+    return snap1.dialect_impl or snap2.dialect_impl
+
+
+def _compare_columns(table: str, snap1: Snapshot, snap2: Snapshot,
+                     commenti: bool = True) -> list[Difference]:
     diffs = []
     e1, e2 = snap1.env_name, snap2.env_name
     cols1, cols2 = snap1.columns(table), snap2.columns(table)
+    dial = _dialetto_comune(snap1, snap2)
 
     for col in sorted(set(cols2) - set(cols1)):
         diffs.append(Difference("column", table, MISSING, column=col, missing_in=e1,
-                                present_in=e2, detail=type_signature(cols2[col])))
+                                present_in=e2, detail=type_signature(cols2[col], dial)))
     for col in sorted(set(cols1) - set(cols2)):
         diffs.append(Difference("column", table, MISSING, column=col, missing_in=e2,
-                                present_in=e1, detail=type_signature(cols1[col])))
+                                present_in=e1, detail=type_signature(cols1[col], dial)))
 
     for col in sorted(set(cols1) & set(cols2)):
-        type1, type2 = type_signature(cols1[col]), type_signature(cols2[col])
+        type1 = type_signature(cols1[col], dial)
+        type2 = type_signature(cols2[col], dial)
         if type1 != type2:
             diffs.append(Difference("column", table, TYPE_MISMATCH, column=col,
                                     detail=f"{e1}: {type1} | {e2}: {type2}"))
@@ -239,11 +352,20 @@ def _compare_columns(table: str, snap1: Snapshot, snap2: Snapshot) -> list[Diffe
                 "column", table, DEFAULT_MISMATCH, column=col,
                 detail=f"{e1}: {def1 or '(nessuno)'} | {e2}: {def2 or '(nessuno)'}",
             ))
+        if commenti:
+            com1 = (cols1[col].comment or "").strip()
+            com2 = (cols2[col].comment or "").strip()
+            if com1 != com2:
+                diffs.append(Difference(
+                    "column", table, COMMENT_MISMATCH, column=col,
+                    detail=f"{e1}: {com1 or '(nessuno)'} | {e2}: {com2 or '(nessuno)'}",
+                ))
 
     return diffs
 
 
-def _compare_constraints(table: str, snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
+def _compare_constraints(table: str, snap1: Snapshot, snap2: Snapshot,
+                         attributi_letti: bool = True) -> list[Difference]:
     """Indici, foreign key, unique, check e chiave primaria."""
     diffs = []
     e1, e2 = snap1.env_name, snap2.env_name
@@ -262,6 +384,19 @@ def _compare_constraints(table: str, snap1: Snapshot, snap2: Snapshot) -> list[D
             diffs.append(Difference(kind, table, MISSING, missing_in=e2, present_in=e1,
                                     detail=signature))
 
+        # Gli oggetti che combaciano possono comunque differire in quello che
+        # l'identita' non comprende: le azioni di una chiave esterna,
+        # l'ordinamento e la condizione di un indice.
+        attributi = ATTRIBUTI_CONFRONTATI.get(kind)
+        if attributi is None or not attributi_letti:
+            continue
+        for signature in sorted(set(items1) & set(items2)):
+            a1, a2 = attributi(items1[signature]), attributi(items2[signature])
+            if a1 != a2:
+                diffs.append(Difference(
+                    kind, table, DEFINITION_MISMATCH,
+                    detail=f"{signature} - {e1}: {a1} | {e2}: {a2}"))
+
     pk1, pk2 = snap1.primary_key(table), snap2.primary_key(table)
     if pk1 != pk2:
         diffs.append(Difference(
@@ -278,6 +413,18 @@ def _compare_sequences(snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
 
     for name in sorted(set(snap1.sequences) & set(snap2.sequences)):
         spec1, spec2 = snap1.sequences[name], snap2.sequences[name]
+
+        # Se da una parte i valori non si sono letti, non c'e' confronto da
+        # fare: prima si confrontavano i predefiniti contro quelli veri, e il
+        # verdetto - differenza o silenzio - era casuale. Meglio dirlo.
+        if not (spec1.valori_letti and spec2.valori_letti):
+            ciechi = [e for e, s in ((e1, spec1), (e2, spec2)) if not s.valori_letti]
+            diffs.append(Difference(
+                "sequence", name, DEFINITION_MISMATCH,
+                detail="valori non confrontati: il catalogo non li ha forniti in "
+                       + " e ".join(ciechi)))
+            continue
+
         if spec1.signature() != spec2.signature():
             diffs.append(Difference(
                 "sequence", name, DEFINITION_MISMATCH,
@@ -321,11 +468,20 @@ def _compare_triggers(snap1: Snapshot, snap2: Snapshot) -> list[Difference]:
     # il testo e' quello che il motore stesso ricostruisce, non quello scritto
     # a mano, e due motori diversi lo formattano in modo diverso.
     for name in sorted(set(snap1.triggers) & set(snap2.triggers)):
-        body1 = snap1.triggers[name].definition
-        body2 = snap2.triggers[name].definition
-        if normalize_sql(body1) != normalize_sql(body2):
+        spec1, spec2 = snap1.triggers[name], snap2.triggers[name]
+        if normalize_sql(spec1.definition) != normalize_sql(spec2.definition):
             diffs.append(Difference("trigger", name, DEFINITION_MISMATCH,
                                     detail="il corpo del trigger e' diverso nei due ambienti"))
+
+        # Lo stato non entra nel corpo: un trigger disattivato ha lo stesso
+        # CREATE di uno attivo, ma non scatta. Due ambienti cosi' si
+        # comportano in modo diverso pur avendo lo stesso codice, ed e' una
+        # differenza che prima nessuno vedeva.
+        if spec1.stato is not None and spec2.stato is not None:
+            if spec1.stato != spec2.stato:
+                diffs.append(Difference(
+                    "trigger", name, STATE_MISMATCH,
+                    detail=f"{e1}: {spec1.stato} | {e2}: {spec2.stato}"))
     return diffs
 
 
@@ -433,6 +589,17 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
             _compile(CreateIndex(index), target) for index in table.indexes)
 
     for d in diff.tables:
+        if d.kind == "table" and d.change == UNREADABLE:
+            # Il buco va detto anche qui: chi esegue lo script deve sapere che
+            # di quella tabella non si e' confrontato niente.
+            scripts["tables"].append(
+                f"-- La tabella {d.name} non e' stata letta in {d.present_in}: "
+                f"resta fuori dal confronto e questo script non la tocca.")
+            continue
+        if d.kind == "table" and d.change == COMMENT_MISMATCH:
+            scripts["tables"].append(_commento_ddl(
+                d, source.table_comment(d.name), target, templates, qualify, quote))
+            continue
         if d.kind == "table":
             continue                      # gia' emesse, in ordine di dipendenza
         if d.kind == "column" and d.change == MISSING and d.missing_in == target_env:
@@ -453,6 +620,11 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
             )
         elif d.kind == "column" and d.change == DEFAULT_MISMATCH:
             scripts["tables"].append(_default_ddl(d, source, target, templates, qualify, quote))
+        elif d.kind == "column" and d.change == COMMENT_MISMATCH:
+            colonna = source.columns(d.name).get(d.column)
+            scripts["tables"].append(_commento_ddl(
+                d, (getattr(colonna, "comment", "") or "").strip(),
+                target, templates, qualify, quote))
 
     for d in diff.constraints:
         if d.missing_in != target_env:
@@ -460,6 +632,19 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
                 scripts["constraints"].append(
                     f"-- Chiave primaria diversa su {d.name} ({d.detail}). "
                     f"Cambiarla e' un'operazione distruttiva: va valutata a mano."
+                )
+            elif (d.kind in ATTRIBUTI_CONFRONTATI
+                    and d.change == DEFINITION_MISMATCH):
+                # L'oggetto c'e' in entrambi gli ambienti e combacia per
+                # colonne: cambia un attributo (azioni della chiave esterna,
+                # ordinamento o condizione dell'indice). Si allinea solo
+                # togliendolo e ricreandolo, e il DDL dipende da come si
+                # vuole gestire la finestra senza vincolo o senza indice:
+                # meglio dirlo che generare qualcosa a caso.
+                scripts["constraints"].append(
+                    f"-- {ETICHETTA_VINCOLO[d.kind]} su {d.name}: {d.detail}. "
+                    f"Allinearlo richiede di eliminarlo e ricrearlo, quindi va "
+                    f"valutato a mano."
                 )
             continue
 
@@ -515,6 +700,10 @@ def generate_sql_scripts(diff: DiffResult, target_env: str) -> dict[str, list[st
                 name=qualify(d.name), target=source.synonyms.get(d.name, "?")))
 
     for d in diff.triggers:
+        if d.change == STATE_MISMATCH:
+            scripts["triggers"].append(_stato_trigger_ddl(
+                d, source.triggers.get(d.name), target, templates, qualify))
+            continue
         if d.missing_in != target_env and d.change != DEFINITION_MISMATCH:
             continue  # il trigger manca nell'altro ambiente, non nel target: niente da fare qui
         spec = source.triggers.get(d.name)
@@ -592,7 +781,20 @@ def generate_rollback_scripts(diff: DiffResult, target_env: str) -> dict[str, li
         scripts["tables"].append(templates["drop_table"].format(table=qualify(table.name)))
 
     for d in diff.tables:
+        if d.kind == "table" and d.change == COMMENT_MISMATCH:
+            # Rimettere il commento che il target aveva: un commento e' una
+            # delle poche cose davvero reversibili, il testo precedente e'
+            # nello snapshot del target.
+            scripts["tables"].append(_commento_ddl(
+                d, target.table_comment(d.name), target, templates, qualify, quote))
+            continue
         if d.kind != "column":
+            continue
+        if d.change == COMMENT_MISMATCH:
+            colonna = target.columns(d.name).get(d.column)
+            scripts["tables"].append(_commento_ddl(
+                d, (getattr(colonna, "comment", "") or "").strip(),
+                target, templates, qualify, quote))
             continue
         if d.change == MISSING and d.missing_in == target_env:
             # La colonna non c'era: toglierla riporta indietro, ma i dati messi
@@ -626,6 +828,11 @@ def generate_rollback_scripts(diff: DiffResult, target_env: str) -> dict[str, li
             scripts["synonyms"].append(templates["drop_synonym"].format(name=qualify(d.name)))
 
     for d in diff.triggers:
+        if d.change == STATE_MISMATCH:
+            # Rimettere lo stato che il trigger aveva nel target.
+            scripts["triggers"].append(_stato_trigger_ddl(
+                d, target.triggers.get(d.name), target, templates, qualify))
+            continue
         if d.missing_in == target_env and templates["drop_trigger"]:
             # Il trigger l'ha aggiunto l'allineamento: la tabella sta ancora
             # solo nella sorgente, il target non lo aveva prima di eseguirlo.
@@ -938,6 +1145,55 @@ def _default_ddl(d: Difference, source: Snapshot, target: Snapshot, templates: d
         return (f"-- {target.dialect}: il default di {d.name}.{d.column} "
                 f"va rimosso a mano ({d.detail})")
     return template.format(table=qualify(d.name), column=quote(d.column))
+
+
+def _letterale(testo: str, templates: dict) -> str | None:
+    """Il commento come letterale SQL, con gli apici raddoppiati.
+
+    Il testo viene dal catalogo dell'altro ambiente, non dall'utente, ma un
+    apice dentro un commento ("l'ordine") basta a spezzare l'istruzione: va
+    comunque trattato come testo e non come SQL.
+    """
+    if not testo:
+        return templates["comment_null"]
+    return "'" + testo.replace("'", "''") + "'"
+
+
+def _commento_ddl(d: Difference, testo: str, target: Snapshot, templates: dict,
+                  qualify, quote) -> str:
+    """Istruzione per portare il commento di una tabella o di una colonna a
+    quello dell'altro ambiente, o il motivo per cui non si genera."""
+    chiave = "comment_column" if d.kind == "column" else "comment_table"
+    template = templates[chiave]
+    oggetto = f"{d.name}.{d.column}" if d.column else d.name
+    if template is None:
+        return (f"-- Commento diverso su {oggetto} ({d.detail}). "
+                f"Su {target.dialect} non si cambia con un'istruzione sola: "
+                f"va fatto a mano.")
+    return template.format(
+        table=qualify(d.name),
+        # Il commento di una tabella non ha colonna, e quote("") non e' ""
+        # ma un errore: il preparer legge il primo carattere del nome.
+        column=quote(d.column) if d.column else "",
+        comment=_letterale(testo, templates))
+
+
+# Gli stati che si sanno riprodurre con un'istruzione. Gli altri di PostgreSQL
+# ("solo in replica", "sempre") hanno una sintassi propria e sono rari: si
+# dichiarano invece di indovinare quale ENABLE serva.
+_DDL_STATO_TRIGGER = {ATTIVO: "enable_trigger", DISATTIVATO: "disable_trigger"}
+
+
+def _stato_trigger_ddl(d: Difference, spec, target: Snapshot, templates: dict,
+                       qualify) -> str:
+    """ENABLE o DISABLE per portare il trigger allo stato dell'altro ambiente."""
+    template = templates.get(_DDL_STATO_TRIGGER.get(spec.stato if spec else "", ""))
+    if template is None:
+        return (f"-- Il trigger {d.name} ha uno stato diverso nei due ambienti "
+                f"({d.detail}): su {target.dialect} va allineato a mano.")
+    return template.format(
+        name=qualify(d.name),
+        table=qualify(spec.table) if spec and spec.table else "?")
 
 
 def _create_sequence_ddl(spec, qualify) -> str:

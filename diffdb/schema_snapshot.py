@@ -12,7 +12,6 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-import sqlparse
 from sqlalchemy import (
     CheckConstraint,
     MetaData,
@@ -24,6 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
+from sqlparse import lexer as sqllexer
 from sqlparse import tokens as sqltokens
 
 from diffdb.rules import NESSUNA, Regole
@@ -59,9 +59,15 @@ MSSQL_CHECK_QUERY = (
 # possono avere un trigger con lo stesso nome, e qui si confondono nello
 # stesso dizionario. Limite noto, non risolto: e' lo stesso compromesso della
 # chiave per nome usato per viste, sequenze e sinonimi.
+#
+# La quarta colonna e' lo stato: un trigger disattivato c'e' ma non scatta, e
+# due ambienti con lo stesso trigger - uno attivo e uno spento - si comportano
+# in modo diverso. Ogni motore lo scrive a modo suo (vedi _stato_trigger);
+# MySQL e SQLite non sanno disattivare un trigger e non hanno niente da dire,
+# percio' tornano NULL e lo stato non si confronta.
 TRIGGER_QUERIES = {
     "postgresql": (
-        "SELECT t.tgname, c.relname, pg_get_triggerdef(t.oid) "
+        "SELECT t.tgname, c.relname, pg_get_triggerdef(t.oid), t.tgenabled "
         "FROM pg_trigger t "
         "JOIN pg_class c ON c.oid = t.tgrelid "
         "JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -70,18 +76,56 @@ TRIGGER_QUERIES = {
     ),
     "oracle": (
         "SELECT trigger_name, table_name, "
-        "DBMS_METADATA.GET_DDL('TRIGGER', trigger_name, owner) "
+        "DBMS_METADATA.GET_DDL('TRIGGER', trigger_name, owner), status "
         "FROM all_triggers WHERE owner = NVL(:schema, USER) AND base_object_type = 'TABLE'"
     ),
     "mssql": (
-        "SELECT tr.name, OBJECT_NAME(tr.parent_id), sm.definition "
+        "SELECT tr.name, OBJECT_NAME(tr.parent_id), sm.definition, tr.is_disabled "
         "FROM sys.triggers tr "
         "JOIN sys.sql_modules sm ON sm.object_id = tr.object_id "
         "WHERE tr.parent_class = 1 "  # 1 = trigger DML su tabella/vista, non su DB/server
         "AND OBJECT_SCHEMA_NAME(tr.parent_id) = COALESCE(:schema, SCHEMA_NAME())"
     ),
-    "sqlite": "SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'trigger'",
+    "sqlite": ("SELECT name, tbl_name, sql, NULL FROM sqlite_master "
+               "WHERE type = 'trigger'"),
 }
+
+# I due stati che si sanno anche riprodurre con un'istruzione: li usa la
+# generazione dello script (vedi _DDL_STATO_TRIGGER in diff_DB).
+ATTIVO = "attivo"
+DISATTIVATO = "disattivato"
+
+# Come ogni motore scrive lo stato di un trigger. Le etichette sono quelle che
+# finiscono nel report, percio' sono parole e non codici.
+STATO_TRIGGER = {
+    "postgresql": {
+        "O": ATTIVO,
+        "D": DISATTIVATO,
+        "R": "attivo solo in replica",
+        "A": "attivo sempre, anche in replica",
+    },
+    "oracle": {"ENABLED": ATTIVO, "DISABLED": DISATTIVATO},
+}
+
+
+def _stato_trigger(dialetto: str, valore) -> str | None:
+    """Lo stato in parole, o None se il motore non lo dice.
+
+    None e' diverso da "attivo": vuol dire che non si sa, e uno stato che non
+    si sa non va confrontato (vedi _compare_triggers). E' il caso di MySQL e
+    SQLite, dove un trigger non si puo' disattivare, e degli snapshot salvati
+    prima che lo stato venisse registrato.
+    """
+    if valore is None:
+        return None
+    if dialetto == "mssql":
+        # is_disabled e' un bit: 0/1 o False/True a seconda del driver.
+        return DISATTIVATO if valore else ATTIVO
+    etichette = STATO_TRIGGER.get(dialetto, {})
+    chiave = str(valore).strip().upper()
+    # Uno stato che non conosciamo si mostra invece di essere zittito: al
+    # massimo e' un falso allarme, mai il silenzio su una differenza vera.
+    return etichette.get(chiave, f"stato non riconosciuto ({chiave})")
 
 # Procedure e funzioni standalone (non i membri di un package Oracle, quelli
 # restano fuori: sono un'altra categoria, con la propria identita' separata
@@ -150,15 +194,38 @@ SEQUENCE_QUERIES = {
 
 @dataclass
 class SequenceSpec:
+    """Una sequenza.
+
+    `valori_letti` distingue i valori veri da quelli di comodo. Quando il
+    catalogo non risponde si conoscono solo i nomi, e i valori restano quelli
+    predefiniti qui sotto: confrontarli come se fossero veri faceva segnalare
+    differenze che nessuno aveva verificato, o tacere su differenze che non si
+    era in grado di vedere. Chi non ha letto i valori lo dichiara.
+    """
+
     name: str
     start: int = 1
     increment: int = 1
     minvalue: int | None = None
     maxvalue: int | None = None
     cycle: bool = False
+    valori_letti: bool = True
 
     def signature(self) -> str:
-        return f"START {self.start} INCREMENT {self.increment} CYCLE {int(self.cycle)}"
+        """Tutto quello che si e' letto dal catalogo.
+
+        MINVALUE e MAXVALUE c'erano gia' fra i dati raccolti ma restavano
+        fuori dalla firma, percio' una sequenza con tetto 1000 e una con tetto
+        9999999999 risultavano identiche.
+        """
+        return (f"START {self.start} INCREMENT {self.increment} "
+                f"MINVALUE {_valore(self.minvalue)} "
+                f"MAXVALUE {_valore(self.maxvalue)} "
+                f"CYCLE {int(self.cycle)}")
+
+
+def _valore(v: int | None) -> str:
+    return "(non impostato)" if v is None else str(v)
 
 
 @dataclass
@@ -171,6 +238,9 @@ class TriggerSpec:
     name: str
     table: str | None
     definition: str
+    # Lo stato in parole ("attivo", "disattivato", ...), o None quando il
+    # motore non lo espone: None vuol dire "non si sa", e non si confronta.
+    stato: str | None = None
 
 
 def routine_key(kind: str, name: str) -> str:
@@ -208,6 +278,18 @@ class Snapshot:
     triggers: dict[str, TriggerSpec] = field(default_factory=dict)
     routines: dict[str, RoutineSpec] = field(default_factory=dict)  # routine_key(kind,nome)->spec
     regole: Regole = field(default_factory=Regole)
+    # Falso solo per gli snapshot riletti da un file scritto prima che
+    # azioni delle FK e dettagli degli indici venissero registrati:
+    # quei dati non ci sono e non vanno confrontati (vedi diff_DB).
+    attributi_vincoli_letti: bool = True
+    # Falso dove i commenti non ci sono: SQLite non li ha, e gli snapshot
+    # salvati prima non li registravano. Senza questo, confrontare un ambiente
+    # commentato con uno che non sa dire i commenti darebbe "commento
+    # cancellato" su ogni tabella (vedi commenti_confrontabili in diff_DB).
+    commenti_letti: bool = True
+    # Tabelle che non si sono riuscite a leggere, con il motivo: nome ->
+    # errore. Non confonderle con le assenti, sono un buco nel confronto.
+    tabelle_illeggibili: dict[str, str] = field(default_factory=dict)
 
     @property
     def tables(self) -> dict[str, object]:
@@ -227,6 +309,11 @@ class Snapshot:
     def columns(self, table_name: str) -> dict[str, object]:
         table = self.table(table_name)
         return {} if table is None else {c.name: c for c in table.columns}
+
+    def table_comment(self, table_name: str) -> str:
+        """Il commento della tabella, vuoto se non ce n'e'."""
+        table = self.table(table_name)
+        return "" if table is None else (table.comment or "").strip()
 
     def indexes(self, table_name: str) -> dict[str, object]:
         """Indici per firma (colonne + unicita'), non per nome: i nomi cambiano."""
@@ -284,6 +371,10 @@ def take_snapshot(env_name: str, engine: Engine, schema: str | None = None,
         schema=schema,
         dialect_impl=engine.dialect,
         regole=regole,
+        # SQLite non ha i commenti: chiederglieli non da' errore, da' sempre
+        # None, e confrontare quel None con i commenti veri di un altro motore
+        # inventerebbe una differenza per ogni tabella.
+        commenti_letti=bool(getattr(engine.dialect, "supports_comments", False)),
     )
 
     inspector = inspect(engine)
@@ -294,7 +385,7 @@ def take_snapshot(env_name: str, engine: Engine, schema: str | None = None,
     nomi = [n for n in inspector.get_table_names(schema=schema)
             if regole.tabella_inclusa(n)]
     if nomi:
-        snapshot.metadata.reflect(bind=engine, schema=schema, views=False, only=nomi)
+        _rifletti(snapshot, engine, schema, nomi)
 
     if engine.dialect.name == "mssql":
         _fetch_mssql_check_constraints(engine, schema, snapshot.metadata)
@@ -329,6 +420,43 @@ def take_snapshot(env_name: str, engine: Engine, schema: str | None = None,
         len(snapshot.sequences), len(snapshot.synonyms), len(snapshot.triggers),
         len(snapshot.routines))
     return snapshot
+
+
+def _rifletti(snapshot: Snapshot, engine: Engine, schema: str | None,
+              nomi: list[str]) -> None:
+    """Riflette le tabelle, e se una non si legge rinuncia solo a quella.
+
+    La riflessione in blocco e' una sola istruzione: basta una tabella con un
+    tipo che il dialetto non sa ricostruire, o su cui l'utente non ha i
+    permessi, e saltava l'intera fotografia dell'ambiente - quindi tutto il
+    confronto, anche sulle centinaia di tabelle sane. Si prova prima in blocco,
+    che e' la strada veloce, e solo quando fallisce si riparte una tabella
+    alla volta per isolare quelle che danno problemi.
+
+    Le tabelle rimaste fuori non vengono dimenticate: finiscono in
+    `tabelle_illeggibili` e il confronto le dichiara, perche' "non l'ho letta"
+    e "non c'e'" sono due cose diverse e la seconda sarebbe una bugia.
+    """
+    try:
+        snapshot.metadata.reflect(bind=engine, schema=schema, views=False, only=nomi)
+        return
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "Lettura in blocco delle tabelle di '%s' non riuscita (%s): "
+            "si riprova una tabella alla volta.", snapshot.env_name, exc)
+
+    for nome in nomi:
+        # reflect() salta da se' le tabelle gia' presenti nel metadata: quelle
+        # che il tentativo in blocco aveva fatto in tempo a leggere non si
+        # rileggono.
+        try:
+            snapshot.metadata.reflect(bind=engine, schema=schema, views=False,
+                                      only=[nome])
+        except SQLAlchemyError as exc:
+            motivo = str(exc).strip().splitlines()[0]
+            snapshot.tabelle_illeggibili[nome] = motivo
+            logger.warning("Tabella '%s' di '%s' non leggibile: %s",
+                           nome, snapshot.env_name, motivo)
 
 
 @dataclass
@@ -640,7 +768,9 @@ def _fetch_sequences(engine, schema, inspector) -> dict[str, SequenceSpec]:
             logger.warning("Lettura dei valori delle sequenze fallita: %s", exc)
 
     try:
-        return {n: SequenceSpec(name=n) for n in inspector.get_sequence_names(schema=schema)}
+        # Solo i nomi: i valori non si sono letti e non vanno spacciati per veri.
+        return {n: SequenceSpec(name=n, valori_letti=False)
+                for n in inspector.get_sequence_names(schema=schema)}
     except (NotImplementedError, SQLAlchemyError) as exc:
         logger.info("Sequenze non supportate su %s: %s", engine.dialect.name, exc)
         return {}
@@ -691,8 +821,10 @@ def _fetch_triggers(engine: Engine, schema: str | None) -> dict[str, TriggerSpec
         return {}
 
     return {
-        nome: TriggerSpec(name=nome, table=tabella, definition=_leggi_clob(definizione))
-        for nome, tabella, definizione in righe
+        nome: TriggerSpec(name=nome, table=tabella,
+                          definition=_leggi_clob(definizione),
+                          stato=_stato_trigger(dialetto, stato))
+        for nome, tabella, definizione, stato in righe
     }
 
 
@@ -713,7 +845,10 @@ def _fetch_mysql_triggers(engine: Engine, schema: str | None) -> dict[str, Trigg
     """MySQL non ha un equivalente di pg_get_triggerdef: SHOW CREATE TRIGGER
     da' il testo completo, ma un'interrogazione per trigger, non una sola per
     tutto lo schema (lo stesso compromesso gia' accettato per i CHECK di SQL
-    Server)."""
+    Server).
+
+    Lo stato resta None: su MySQL un trigger non si puo' disattivare, quindi
+    non c'e' nessuno stato da leggere ne' da confrontare."""
     quote = engine.dialect.identifier_preparer.quote
     try:
         with engine.connect() as conn:
@@ -790,21 +925,135 @@ def _fetch_mysql_routines(engine: Engine, schema: str | None) -> dict[str, Routi
         return {}
 
 
-def type_signature(column) -> str:
-    """Firma del tipo, confrontabile fra ambienti (VARCHAR(50), INTEGER, ...)."""
-    return str(column.type).upper()
+def type_signature(column, dialect_impl=None) -> str:
+    """Firma del tipo, confrontabile fra ambienti (VARCHAR(50), INTEGER, ...).
+
+    Con `dialect_impl` la firma e' quella che quel dialetto scrive davvero.
+    Serve perche' `str()` perde i parametri dei tipi che appartengono a un
+    dialetto: su Oracle `NUMBER(10,2)` e `NUMBER(38,0)` danno entrambi
+    `NUMBER`, e una colonna numerica allargata non risultava diversa. Lo
+    stesso su MySQL con le etichette di `ENUM` e con `UNSIGNED`, e sui tipi
+    temporali con la precisione dei secondi dei tre motori. I tipi generici
+    (`VARCHAR`, `CHAR`, `NUMERIC`) non ne soffrivano: `str()` li rende per
+    intero.
+
+    Senza dialetto resta la forma generica. E' il caso di due ambienti con
+    dialetti diversi, dove le due forme native non sarebbero confrontabili
+    (`VARCHAR(50)` contro `VARCHAR2(50 CHAR)`): meglio la forma generica, che
+    almeno combacia, che una differenza inventata su ogni colonna.
+    """
+    reso = None
+    if dialect_impl is not None:
+        try:
+            reso = column.type.compile(dialect=dialect_impl)
+        except Exception:   # tipo che quel dialetto non sa rendere
+            reso = None
+    if reso is None:
+        reso = str(column.type)
+    return _maiuscolo_fuori_dalle_stringhe(reso)
+
+
+def _maiuscolo_fuori_dalle_stringhe(reso: str) -> str:
+    """Maiuscolo sul tipo, ma non su quello che sta fra apici.
+
+    Il maiuscolo serve a non far dipendere il confronto da come il dialetto
+    scrive `varchar`. Applicarlo a tutto nasconderebbe invece una differenza
+    vera: le etichette di un `ENUM` o di un `SET` di MySQL stanno fra apici e
+    contano, percio' `ENUM('a')` e `ENUM('A')` sono due tipi diversi. E' lo
+    stesso motivo per cui `normalize_sql` lascia intatte le stringhe.
+    """
+    if "'" not in reso:
+        return reso.upper()
+    fuori: list[str] = []
+    dentro = False
+    for pezzo in reso.split("'"):
+        fuori.append(pezzo if dentro else pezzo.upper())
+        dentro = not dentro
+    return "'".join(fuori)
 
 
 def index_signature(index) -> str:
+    """Identita' dell'indice: colonne e unicita'.
+
+    Deliberatamente non comprende ordinamento e condizione, che pure sono
+    differenze vere: la firma e' anche la chiave con cui gli script ritrovano
+    l'oggetto da ricreare (vedi `diff_DB`), e arricchirla trasformerebbe un
+    attributo cambiato in "indice assente qui e presente la'". Quegli
+    attributi li confronta `index_attributes` sugli indici che combaciano,
+    come si fa per il tipo di una colonna.
+    """
     columns = ",".join(c.name for c in index.columns)
     return f"{'UNIQUE ' if index.unique else ''}({columns})"
 
 
 def fk_signature(fk) -> str:
-    """Identifica una FK dalle colonne, non dal nome: i nomi autogenerati cambiano."""
+    """Identifica una FK dalle colonne, non dal nome: i nomi autogenerati cambiano.
+
+    Le azioni referenziali non stanno qui per lo stesso motivo spiegato in
+    `index_signature`: le confronta `fk_attributes`.
+    """
     columns = ",".join(c.name for c in fk.columns)
     targets = ",".join(e.target_fullname for e in fk.elements)
     return f"({columns}) -> ({targets})"
+
+
+def fk_attributes(fk) -> str:
+    """Le azioni referenziali, che l'identita' della FK non comprende.
+
+    `ON DELETE CASCADE` contro `ON DELETE RESTRICT` e' una differenza di
+    comportamento vera e non veniva segnalata affatto. Non tutti i motori le
+    riflettono - su SQLite restano sempre vuote - ma fra due ambienti dello
+    stesso motore la riflessione si comporta allo stesso modo, che e' il caso
+    per cui il confronto e' pensato.
+    """
+    pezzi = []
+    for azione, valore in (("ON DELETE", fk.ondelete), ("ON UPDATE", fk.onupdate)):
+        if valore:
+            pezzi.append(f"{azione} {str(valore).upper()}")
+    return " ".join(pezzi) or "(nessuna azione)"
+
+
+def index_attributes(index) -> str:
+    """Ordinamento delle colonne e condizione di un indice parziale.
+
+    Due cose che non entravano nel confronto: un indice `(a DESC)` risultava
+    identico a `(a)`, e un indice parziale `WHERE stato = 'x'` identico a uno
+    pieno sulle stesse colonne. SQLAlchemy porta l'ordinamento dentro
+    `expressions`, avvolgendo la colonna in `desc()`, e la condizione fra le
+    opzioni del dialetto.
+    """
+    # Su uno snapshot riletto da file le espressioni non conservano
+    # l'ordinamento: la stringa gia' calcolata al salvataggio vale di piu'.
+    gia_pronta = getattr(index, "info", {}).get("attributi")
+    if gia_pronta is not None:
+        return gia_pronta
+
+    pezzi = [_testo_espressione_indice(e) for e in index.expressions]
+    dove = _condizione_indice(index)
+    if dove:
+        pezzi.append(f"WHERE {dove}")
+    return ", ".join(pezzi)
+
+
+def _testo_espressione_indice(espressione) -> str:
+    """"tabella.col DESC" -> "col DESC": il nome della tabella e' gia' noto."""
+    testo = str(espressione)
+    nome = getattr(espressione, "name", None)
+    if nome and testo.endswith(nome):
+        return nome
+    return _WS.sub(" ", testo.split(".", 1)[-1] if "." in testo else testo).strip()
+
+
+def _condizione_indice(index) -> str:
+    """La condizione di un indice parziale, con qualunque dialetto l'abbia messa."""
+    for opzioni in getattr(index, "dialect_options", {}).values():
+        try:
+            dove = opzioni["where"]
+        except (KeyError, TypeError):
+            continue
+        if dove is not None:
+            return _WS.sub(" ", str(dove)).strip()
+    return ""
 
 
 def unique_signature(constraint) -> str:
@@ -818,6 +1067,14 @@ _WS = re.compile(r"\s+")
 _SENZA_SPAZIO_PRIMA = {",", ")", ";", "."}
 _SENZA_SPAZIO_DOPO = {"(", "."}
 
+_SEGNI = {"+", "-"}
+
+# Un numero e nient'altro: serve a non togliere gli apici attorno a '0', che
+# e' un testo e non il numero 0 (vedi normalize_sql).
+_SOLO_NUMERO = re.compile(r"[-+]?\d+(?:\.\d+)?\Z")
+
+_LEXER = sqllexer.Lexer.get_default_instance()
+
 
 def _token_significativi(sql: str) -> list[str]:
     """I token dell'istruzione, senza commenti ne' spaziatura.
@@ -825,28 +1082,56 @@ def _token_significativi(sql: str) -> list[str]:
     Stringhe e identificatori quotati tornano tali e quali: metterli in
     minuscolo nasconderebbe differenze vere, perche' 'Mario' e 'mario' sono
     due default diversi e "Col" e "col" due colonne diverse.
+
+    Si usa il lexer e non `sqlparse.parse()` perche' `parse()` raggruppa i
+    token in un albero, e il raggruppamento ha un limite anti-DoS: oltre
+    10000 token solleva SQLParseError, e una sola vista grande - bastano 700
+    colonne - faceva fallire l'intero confronto. Dell'albero qui non si usa
+    niente: servono i token appiattiti, che il lexer da' direttamente, senza
+    limite e piu' in fretta.
     """
     pezzi: list[str] = []
-    for statement in sqlparse.parse(sql):
-        for token in statement.flatten():
-            if token.is_whitespace or token.ttype in sqltokens.Comment:
-                continue
-            if (token.ttype in sqltokens.Literal.String
-                    or token.ttype in sqltokens.Name.Quoted):
-                pezzi.append(token.value)
-            else:
-                pezzi.append(token.value.lower())
+    for ttype, valore in _LEXER.get_tokens(sql):
+        if ttype in sqltokens.Whitespace or ttype in sqltokens.Comment:
+            continue
+        if (ttype in sqltokens.Literal.String
+                or ttype in sqltokens.Name.Quoted):
+            pezzi.append(valore)
+        elif ttype in sqltokens.Number and valore[:1] in _SEGNI:
+            # Il lexer legge "-1" come un numero solo e "- 1" come due token:
+            # senza questa separazione la stessa espressione scritta nei due
+            # modi risultava diversa, e "saldo-1" diverso da "saldo - 1".
+            # Separando sempre il segno, i due modi danno la stessa lista.
+            pezzi.append(valore[0])
+            pezzi.append(valore[1:].lower())   # 1E5 e 1e5 sono lo stesso numero
+        else:
+            pezzi.append(valore.lower())
     return pezzi
+
+
+def _chiude_un_valore(pezzo: str | None) -> bool:
+    """Vero se dopo questo pezzo un segno e' un'operazione e non il segno di
+    un numero: dopo "saldo" o ")" il "-" sottrae, dopo "=" o "(" no."""
+    if not pezzo:
+        return False
+    return pezzo == ")" or pezzo[-1].isalnum() or pezzo[-1] in "_'\"`]"
 
 
 def _ricompone(pezzi: list[str]) -> str:
     """Rimette insieme i token con una spaziatura unica e prevedibile."""
     fuori: list[str] = []
+    precedente: str | None = None
+    segno_unario = False
     for pezzo in pezzi:
-        if fuori and not (pezzo in _SENZA_SPAZIO_PRIMA
-                          or fuori[-1] in _SENZA_SPAZIO_DOPO):
+        if precedente is not None and not (pezzo in _SENZA_SPAZIO_PRIMA
+                                           or precedente in _SENZA_SPAZIO_DOPO
+                                           or segno_unario):
             fuori.append(" ")
+        # Solo estetica: il confronto e' comunque coerente perche' la lista dei
+        # token lo e' gia'. Serve a non mostrare "- 1" nel report.
+        segno_unario = pezzo in _SEGNI and not _chiude_un_valore(precedente)
         fuori.append(pezzo)
+        precedente = pezzo
     return "".join(fuori)
 
 
@@ -879,14 +1164,24 @@ def normalize_sql(sql) -> str:
     Quello che NON si normalizza e' il contenuto delle stringhe e degli
     identificatori quotati: la versione precedente minuscolizzava tutto,
     percio' un default 'Mario' e un default 'mario' risultavano uguali e la
-    differenza sparuva dal confronto. Nascondere una differenza vera e' un
+    differenza spariva dal confronto. Nascondere una differenza vera e' un
     danno peggiore di un falso allarme.
     """
     sql = str(sql) if sql is not None else ""
     if not sql.strip():
         return ""
 
-    normalizzato = _ricompone(_token_significativi(sql)).strip()
+    try:
+        normalizzato = _ricompone(_token_significativi(sql)).strip()
+    except Exception:
+        # Un'istruzione sola non deve poter far fallire tutto il confronto:
+        # e' quello che accadeva quando sqlparse sollevava SQLParseError su
+        # una vista grande. Si ripiega sulla normalizzazione della sola
+        # spaziatura, che non minuscolizza niente e quindi al massimo
+        # produce un falso allarme, mai il silenzio su una differenza vera.
+        logger.warning("Normalizzazione SQL non riuscita, confronto la "
+                       "spaziatura: %s", sql[:80])
+        normalizzato = _WS.sub(" ", sql).strip()
     while normalizzato.endswith(";"):
         normalizzato = normalizzato[:-1].strip()
 
@@ -903,6 +1198,13 @@ def normalize_sql(sql) -> str:
                 and normalizzato[-1] == "'" and "'" not in normalizzato[1:-1]):
             interno = normalizzato[1:-1].strip()
             if not interno:
+                break
+            # Gli apici attorno a un numero NON si toglievano a caso: cosi' il
+            # default '0' di una colonna di testo risultava uguale al default
+            # numerico 0, e la differenza spariva dal confronto. Attorno a un
+            # numero gli apici sono l'unica cosa che distingue i due casi,
+            # quindi restano.
+            if _SOLO_NUMERO.match(interno):
                 break
             normalizzato = interno
             continue

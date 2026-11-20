@@ -30,6 +30,13 @@ def normalize_dialect(dialect: str) -> str:
 
 query_templates = {
     "postgresql": {
+        # Commenti del catalogo: COMMENT ON e' una istruzione a se', non
+        # tocca la colonna e quindi non rischia di perderne gli attributi.
+        "comment_table": "COMMENT ON TABLE {table} IS {comment};",
+        "comment_column": "COMMENT ON COLUMN {table}.{column} IS {comment};",
+        "comment_null": "NULL",    # come si scrive "nessun commento"
+        "enable_trigger": "ALTER TABLE {table} ENABLE TRIGGER {name};",
+        "disable_trigger": "ALTER TABLE {table} DISABLE TRIGGER {name};",
         "drop_check": None,   # usa drop_constraint
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index};",
@@ -60,6 +67,15 @@ query_templates = {
         "drop_function": "DROP FUNCTION {name}({args});",
     },
     "mysql": {
+        "comment_table": "ALTER TABLE {table} COMMENT = {comment};",
+        # Il commento di una colonna sta dentro la sua definizione: cambiarlo
+        # vuol dire riscrivere la colonna per intero con MODIFY, e quello che
+        # non si ripete va perso. Si segnala invece di rischiare.
+        "comment_column": None,
+        "comment_null": "''",
+        # Su MySQL un trigger non si disattiva.
+        "enable_trigger": None,
+        "disable_trigger": None,
         "drop_check": "ALTER TABLE {table} DROP CHECK {name};",
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index} ON {table};",
@@ -89,6 +105,11 @@ query_templates = {
         "drop_function": "DROP FUNCTION {name};",
     },
     "oracle": {
+        "comment_table": "COMMENT ON TABLE {table} IS {comment};",
+        "comment_column": "COMMENT ON COLUMN {table}.{column} IS {comment};",
+        "comment_null": "NULL",
+        "enable_trigger": "ALTER TRIGGER {name} ENABLE;",
+        "disable_trigger": "ALTER TRIGGER {name} DISABLE;",
         "drop_check": None,   # usa drop_constraint
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index};",
@@ -119,6 +140,15 @@ query_templates = {
         "drop_function": "DROP FUNCTION {name};",
     },
     "mssql": {
+        # Su SQL Server i commenti sono extended properties: si aggiungono
+        # con sp_addextendedproperty e si cambiano con sp_updateextendedproperty,
+        # due istruzioni diverse a seconda che ci fosse gia' qualcosa. Si
+        # segnala invece di generare quella sbagliata.
+        "comment_table": None,
+        "comment_column": None,
+        "comment_null": None,
+        "enable_trigger": "ENABLE TRIGGER {name} ON {table};",
+        "disable_trigger": "DISABLE TRIGGER {name} ON {table};",
         "drop_check": None,   # usa drop_constraint
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index} ON {table};",
@@ -150,6 +180,12 @@ query_templates = {
         "drop_function": "DROP FUNCTION {name};",
     },
     "sqlite": {
+        # SQLite non ha i commenti nel catalogo, ne' trigger disattivabili.
+        "comment_table": None,
+        "comment_column": None,
+        "comment_null": None,
+        "enable_trigger": None,
+        "disable_trigger": None,
         "drop_check": None,
         "drop_table": "DROP TABLE {table};",
         "drop_index": "DROP INDEX {index};",

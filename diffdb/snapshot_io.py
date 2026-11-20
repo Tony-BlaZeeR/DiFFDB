@@ -48,13 +48,17 @@ from diffdb.schema_snapshot import (
     SequenceSpec,
     Snapshot,
     TriggerSpec,
+    index_attributes,
     snapshot_connection,
 )
 from diffdb.urls import mask_password
 
 logger = logging.getLogger(__name__)
 
-FORMAT_VERSION = 1
+# 2: azioni referenziali delle FK, ordinamento e condizione degli indici, il
+#    marchio sui valori delle sequenze non letti, i commenti di tabelle e
+#    colonne, lo stato dei trigger e le tabelle che non si sono potute leggere.
+FORMAT_VERSION = 2
 SNAPSHOT_SUFFIXES = (".json",)
 
 
@@ -225,12 +229,18 @@ def to_dict(snapshot: Snapshot, source: str | None = None) -> dict:
                 "minvalue": spec.minvalue,
                 "maxvalue": spec.maxvalue,
                 "cycle": spec.cycle,
+                # Senza questo, salvando uno snapshot si perderebbe il fatto
+                # che quei valori non sono stati letti e sono predefiniti.
+                "valori_letti": spec.valori_letti,
             }
             for name, spec in sorted(snapshot.sequences.items())
         },
         "synonyms": dict(sorted(snapshot.synonyms.items())),
         "triggers": {
-            name: {"table": spec.table, "definition": spec.definition}
+            name: {"table": spec.table, "definition": spec.definition,
+                   # None vuol dire "il motore non lo dice", ed e' diverso da
+                   # "attivo": va conservato come tale (vedi _stato_trigger).
+                   "stato": spec.stato}
             for name, spec in sorted(snapshot.triggers.items())
         },
         "routines": {
@@ -239,6 +249,10 @@ def to_dict(snapshot: Snapshot, source: str | None = None) -> dict:
             for key, spec in sorted(snapshot.routines.items())
         },
         "regole": _filtri(snapshot.regole),
+        # Fuori da CHIAVI_STRUTTURA, e quindi fuori dall'impronta: non
+        # descrivono la struttura letta ma quanto se n'e' potuta leggere.
+        "commenti_letti": snapshot.commenti_letti,
+        "tabelle_illeggibili": dict(sorted(snapshot.tabelle_illeggibili.items())),
     }
     payload["fingerprint"] = impronta_di(payload)
     return payload
@@ -287,6 +301,10 @@ def _table_to_dict(table: Table, dialect_impl=None) -> dict:
                 # ALTER TABLE il server rifiuta.
                 "type_ddl": _tipo_ddl(column, dialect_impl),
                 "nullable": bool(column.nullable),
+                # Il commento del catalogo: senza salvarlo, uno snapshot
+                # riletto direbbe "commento cancellato" su ogni colonna
+                # commentata dell'altro ambiente.
+                "comment": column.comment or None,
                 "server_default": _server_default(column),
                 # Senza questo flag SQLAlchemy, ricostruendo la tabella, decide
                 # da se' che un intero in chiave primaria e' auto-incrementante e
@@ -296,6 +314,7 @@ def _table_to_dict(table: Table, dialect_impl=None) -> dict:
             }
             for column in table.columns
         ],
+        "comment": table.comment or None,
         "primary_key": [c.name for c in table.primary_key.columns],
         "indexes": sorted(
             (
@@ -303,6 +322,11 @@ def _table_to_dict(table: Table, dialect_impl=None) -> dict:
                     "name": index.name,
                     "columns": [c.name for c in index.columns],
                     "unique": bool(index.unique),
+                    # Ordinamento e condizione: non ricostruibili come oggetti
+                    # SQLAlchemy in modo affidabile, ma per il confronto serve
+                    # solo la stringa, prodotta dalla stessa funzione che la
+                    # calcola sugli indici dal vivo.
+                    "attributi": index_attributes(index),
                 }
                 for index in table.indexes
             ),
@@ -322,6 +346,8 @@ def _table_to_dict(table: Table, dialect_impl=None) -> dict:
                     "name": fk.name,
                     "columns": [c.name for c in fk.columns],
                     "refers_to": [e.target_fullname for e in fk.elements],
+                    "ondelete": fk.ondelete,
+                    "onupdate": fk.onupdate,
                 }
                 for fk in table.foreign_key_constraints
             ),
@@ -389,6 +415,14 @@ def from_dict(payload: dict, origin: str = "snapshot") -> Snapshot:
         schema=schema,
         dialect_impl=_dialect_impl(dialect),
         metadata=MetaData(),
+        # Gli snapshot in formato 1 non contengono azioni referenziali ne'
+        # dettagli degli indici: confrontarli con uno letto dal vivo
+        # inventerebbe differenze che vengono dal file e non dai database.
+        attributi_vincoli_letti=version >= 2,
+        # Assente negli snapshot in formato 1: di quelli non si sa se i
+        # commenti ci fossero, e confrontarli inventerebbe differenze.
+        commenti_letti=bool(payload.get("commenti_letti", False)),
+        tabelle_illeggibili=dict(payload.get("tabelle_illeggibili") or {}),
     )
 
     for name, table in (payload.get("tables") or {}).items():
@@ -403,12 +437,18 @@ def from_dict(payload: dict, origin: str = "snapshot") -> Snapshot:
             minvalue=spec.get("minvalue"),
             maxvalue=spec.get("maxvalue"),
             cycle=bool(spec.get("cycle", False)),
+            # Assente negli snapshot scritti prima: di quelli non si puo'
+            # sapere, e si tengono per buoni come faceva la versione che li
+            # ha scritti.
+            valori_letti=bool(spec.get("valori_letti", True)),
         )
         for name, spec in (payload.get("sequences") or {}).items()
     }
     snapshot.synonyms = dict(payload.get("synonyms") or {})
     snapshot.triggers = {
-        name: TriggerSpec(name=name, table=spec.get("table"), definition=spec.get("definition", ""))
+        name: TriggerSpec(name=name, table=spec.get("table"),
+                          definition=spec.get("definition", ""),
+                          stato=spec.get("stato"))
         for name, spec in (payload.get("triggers") or {}).items()
     }
     snapshot.routines = {
@@ -453,6 +493,7 @@ def _table_from_dict(metadata: MetaData, name: str, payload: dict, schema) -> Ta
             # In assenza del flag si sceglie False: meglio una colonna normale
             # che una SERIAL inventata dal nulla.
             autoincrement=c.get("autoincrement", False),
+            comment=c.get("comment"),
         )
         for c in payload.get("columns") or []
     ]
@@ -466,11 +507,14 @@ def _table_from_dict(metadata: MetaData, name: str, payload: dict, schema) -> Ta
     for unique in payload.get("unique_constraints") or []:
         args.append(UniqueConstraint(*unique["columns"], name=unique.get("name")))
     for fk in payload.get("foreign_keys") or []:
-        args.append(ForeignKeyConstraint(fk["columns"], fk["refers_to"], name=fk.get("name")))
+        args.append(ForeignKeyConstraint(
+            fk["columns"], fk["refers_to"], name=fk.get("name"),
+            ondelete=fk.get("ondelete"), onupdate=fk.get("onupdate")))
     for check in payload.get("check_constraints") or []:
         args.append(CheckConstraint(check["sqltext"], name=check.get("name")))
 
-    table = Table(name, metadata, *args, schema=schema)
+    table = Table(name, metadata, *args, schema=schema,
+                  comment=payload.get("comment"))
 
     for index in payload.get("indexes") or []:
         missing = [c for c in index["columns"] if c not in table.c]
@@ -480,8 +524,13 @@ def _table_from_dict(metadata: MetaData, name: str, payload: dict, schema) -> Ta
                 index.get("name"), name, ", ".join(missing),
             )
             continue
-        Index(index.get("name"), *[table.c[c] for c in index["columns"]],
-              unique=bool(index.get("unique")))
+        ricostruito = Index(index.get("name"), *[table.c[c] for c in index["columns"]],
+                            unique=bool(index.get("unique")))
+        # `info` e' il posto che SQLAlchemy lascia a chi usa la libreria: qui
+        # tiene la stringa degli attributi letta dal file, che `index_attributes`
+        # preferisce alle espressioni ricostruite (che non li conservano).
+        if index.get("attributi") is not None:
+            ricostruito.info["attributi"] = index["attributi"]
 
     return table
 
