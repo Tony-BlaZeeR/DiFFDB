@@ -14,7 +14,10 @@ pandas==2.3.1
 # libero e' salito fino alla 2.5 e ha superato quello che l'hook di
 # PyInstaller sapeva impacchettare, rompendo l'export Excel negli
 # eseguibili mentre da sorgente funzionava.
-numpy==2.3.1
+# Due righe perche' la 2.3 chiede Python 3.11 e i test girano anche su 3.10.
+# Quella che conta per i pacchetti e' la prima: si costruiscono con 3.12.
+numpy==2.3.1; python_version >= "3.11"
+numpy==2.2.6; python_version < "3.11"
 SQLAlchemy==2.0.41
 sqlparse==0.6.0        # 0.5.3 aveva 10 CVE note (PYSEC-2026-369x)
 

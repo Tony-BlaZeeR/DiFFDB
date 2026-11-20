@@ -34,9 +34,11 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 
 ### Cambiato
 
-- **`numpy` fissato alla 2.3.1 e PyInstaller portato alla 6.21.0.** Una
-  dipendenza indiretta lasciata libera che scivola oltre lo strumento di build
-  fissato rompe il pacchetto senza che una riga di codice cambi.
+- **`numpy` fissato e PyInstaller portato alla 6.21.0.** Una dipendenza
+  indiretta lasciata libera che scivola oltre lo strumento di build fissato
+  rompe il pacchetto senza che una riga di codice cambi. Il pin e' doppio:
+  2.3.1 da Python 3.11 in su, 2.2.6 sotto, perche' la 2.3 non sta piu' su
+  3.10.
 - **L'autodiagnosi `--selftest` controlla anche `numpy`, `pandas` e
   `openpyxl`**: avrebbe intercettato questo guasto prima del rilascio, come ha
   fatto per Oracle e per il pacchetto macOS.
