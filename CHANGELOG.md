@@ -9,6 +9,44 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 
 ## [Non rilasciato]
 
+## [1.4.3] - 2026-11-20
+
+### Corretto
+
+- **L'export Excel non funzionava negli eseguibili e negli installer.** Dopo
+  aver scelto la cartella di destinazione l'app diceva che mancava `pandas` e
+  consigliava `pip install diffdb[report]`, un consiglio inutile: `pandas` era
+  nel pacchetto. Il modulo rotto era `numpy`, impacchettato a meta'
+  (`No module named 'numpy._core._exceptions'`), e `pandas` non parte senza
+  `numpy`, percio' l'app riportava il sintomo sbagliato.
+  La causa sta nelle dipendenze: `numpy` era l'unica del bundle lasciata
+  libera, percio' e' salita da sola fino alla 2.5.5, oltre quello che l'hook
+  di PyInstaller 6.11.1 — fissato da fine 2024 — sa impacchettare. Nessuno ha
+  cambiato il codice: si e' rotto quando `numpy` ha pubblicato la 2.5.
+  **Affetti: tutti gli eseguibili e installer fino alla 1.4.2.** Chi installa
+  con `pip` non era toccato.
+- **Le tabelle non seguivano la finestra.** Restavano della larghezza iniziale,
+  lasciando spazio vuoto a destra quando la finestra veniva allargata. Ora le
+  colonne si adattano alla finestra a ogni dimensione, e quello che si regola a
+  mano conta come proporzione, percio' la regolazione sopravvive al
+  ridimensionamento. Se le colonne eccedono lo spazio compare la barra di
+  scorrimento orizzontale.
+
+### Cambiato
+
+- **`numpy` fissato alla 2.3.1 e PyInstaller portato alla 6.21.0.** Una
+  dipendenza indiretta lasciata libera che scivola oltre lo strumento di build
+  fissato rompe il pacchetto senza che una riga di codice cambi.
+- **L'autodiagnosi `--selftest` controlla anche `numpy`, `pandas` e
+  `openpyxl`**: avrebbe intercettato questo guasto prima del rilascio, come ha
+  fatto per Oracle e per il pacchetto macOS.
+
+### Rimosso
+
+- **`diffdb/utils/tableUtilities.py`**, codice morto: nessun modulo lo
+  importava e serviva a un'idea mai collegata all'app (confrontare due script
+  DDL senza database). Resta nella storia del repository.
+
 ## [1.4.2] - 2026-11-19
 
 ### Corretto
