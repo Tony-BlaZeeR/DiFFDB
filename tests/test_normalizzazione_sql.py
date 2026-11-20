@@ -89,3 +89,50 @@ def test_accetta_oggetti_non_stringa():
             return "SALDO > 0"
 
     assert normalize_sql(Finta()) == normalize_sql("saldo > 0")
+
+
+# --- viste riformattate dagli editor ---------------------------------------
+#
+# Il caso segnalato: viste dichiarate "diverse" fra due ambienti solo perche'
+# scritte con una formattazione differente. Qui ci sono i modi in cui un IDE
+# o un collega riscrivono la stessa vista.
+
+VISTA = "SELECT id, nome, email FROM clienti WHERE attivo = 1"
+
+
+@pytest.mark.parametrize("variante,come", [
+    ("SELECT\n    id,\n    nome,\n    email\nFROM clienti\nWHERE attivo = 1",
+     "indentata a quattro spazi"),
+    ("SELECT\n\tid,\n\tnome,\n\temail\nFROM\tclienti\nWHERE\tattivo = 1",
+     "indentata a tabulazioni"),
+    ("SELECT id\n     , nome\n     , email\n  FROM clienti\n WHERE attivo = 1",
+     "virgole in testa alla riga"),
+    ("select id, nome, email from clienti where attivo = 1",
+     "parole chiave minuscole"),
+    ("SELECT ID, NOME, EMAIL FROM CLIENTI WHERE ATTIVO = 1",
+     "tutto maiuscolo"),
+    ("SELECT id, nome, email FROM clienti WHERE attivo=1",
+     "senza spazi attorno all'uguale"),
+    ("SELECT id, nome, email FROM clienti WHERE attivo = 1 -- solo attivi",
+     "con un commento di riga in coda"),
+    ("SELECT id, /* chiave */ nome, email FROM clienti WHERE attivo = 1",
+     "con un commento a blocco in mezzo"),
+    ("SELECT\n\n   id,\n      nome,\n  email\n\nFROM   clienti\n\nWHERE  attivo = 1\n",
+     "righe vuote e indentazione incoerente"),
+    ("SELECT id, nome, email FROM clienti WHERE attivo = 1;",
+     "con il punto e virgola finale"),
+])
+def test_la_stessa_vista_riformattata_non_e_una_differenza(variante, come):
+    assert normalize_sql(VISTA) == normalize_sql(variante), come
+
+
+@pytest.mark.parametrize("variante,come", [
+    ("SELECT id, nome FROM clienti WHERE attivo = 1", "una colonna in meno"),
+    ("SELECT id, nome, email FROM clienti WHERE attivo = 0", "condizione diversa"),
+    ("SELECT id, nome, email FROM utenti WHERE attivo = 1", "tabella diversa"),
+    ("SELECT nome, id, email FROM clienti WHERE attivo = 1", "colonne in altro ordine"),
+])
+def test_una_vista_davvero_diversa_resta_diversa(variante, come):
+    """L'altra meta' del problema: assorbire la formattazione non deve
+    diventare assorbire tutto."""
+    assert normalize_sql(VISTA) != normalize_sql(variante), come
