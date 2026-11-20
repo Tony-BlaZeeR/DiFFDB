@@ -9,6 +9,147 @@ prodotti in passato ne sono affetti**, invece di doverli sospettare tutti.
 
 ## [Non rilasciato]
 
+## [1.5.0] - 2026-11-20
+
+### Corretto
+
+- **Un confronto con una vista grande falliva del tutto**, con l'errore
+  `Maximum number of tokens exceeded (10000)`. Non falliva la singola vista:
+  falliva l'intero confronto, perche' l'eccezione saliva fino
+  all'interfaccia. Il limite e' una difesa anti-DoS di `sqlparse`, che
+  scatta quando raggruppa i token in un albero; bastano ~700 colonne per
+  superarlo. Di quell'albero la normalizzazione non usava niente - le
+  servono i token appiattiti - percio' ora si rivolge direttamente al lexer,
+  che non ha limite ed e' anche piu' rapido. **Affetti: 1.4.2 e 1.4.3**,
+  dove la normalizzazione e' passata ai token; prima si lavorava sul testo e
+  il problema non c'era. Se un confronto ti e' fallito con quel messaggio,
+  rifallo.
+- **Nessuna singola istruzione puo' piu' far fallire un confronto.** Se la
+  normalizzazione salta per un motivo imprevisto, si ripiega sul confronto
+  della sola spaziatura invece di propagare l'errore. Quel ripiego non
+  uniforma le maiuscole, percio' al massimo produce un falso allarme, mai il
+  silenzio su una differenza vera.
+- **Un carattere di controllo in un solo valore faceva perdere tutto il
+  report Excel.** Il formato .xlsx non li ammette e openpyxl sollevava
+  `IllegalCharacterError`: bastava uno, arrivato da un default o da un CHECK,
+  per non ottenere nessun file. Ora si sostituiscono con il carattere di
+  sostituzione Unicode, visibile nel foglio, e il report si scrive.
+- **Le celle troppo lunghe venivano tagliate in silenzio.** Il limite di
+  32767 caratteri per cella e' del formato e non si puo' aggirare, ma la coda
+  spariva senza avviso. Ora il taglio e' dichiarato nella cella, con la
+  lunghezza originale: un report che perde pezzi senza dirlo e' peggio di uno
+  che lo scrive.
+- **Il confronto taceva su sei differenze vere.** Sono state trovate con un
+  esame del motore, non da una segnalazione, e hanno tutte la stessa forma: la
+  firma di un oggetto ometteva un dato che il catalogo aveva gia' fornito,
+  percio' due oggetti diversi risultavano identici. Per uno strumento di diff
+  e' il guasto peggiore: chi legge "nessuna differenza" si fida e non
+  controlla. **Riguarda tutte le versioni precedenti.** Se hai confrontato
+  ambienti dove questi aspetti contano, vale la pena rifare il confronto.
+  - **I parametri dei tipi che appartengono a un dialetto non si
+    confrontavano.** La firma usava `str()`, che li perde: su Oracle
+    `NUMBER(10,2)` e `NUMBER(38,0)` davano entrambi `NUMBER`, quindi una
+    colonna numerica allargata o con meno decimali non risultava diversa -
+    e `NUMBER` e' *il* tipo numerico di Oracle. Lo stesso su MySQL con le
+    etichette di `ENUM` e `SET` e con `UNSIGNED`, e sui tipi temporali con la
+    precisione dei secondi dei tre motori. Ora la firma e' quella che il
+    dialetto scrive davvero, come faceva gia' la generazione del DDL: il dato
+    c'era, il confronto non lo usava. Fra ambienti di motori diversi resta la
+    forma generica, perche' le forme native non sono confrontabili
+    (`VARCHAR(50)` contro `VARCHAR2(50 CHAR)`) e darebbero una differenza su
+    ogni colonna. I tipi generici (`VARCHAR`, `CHAR`, `NUMERIC`) non erano
+    toccati.
+  - **Le etichette di un `ENUM` non distinguevano le maiuscole**, perche' la
+    firma veniva messa in maiuscolo per intero. Ora il maiuscolo si ferma agli
+    apici, per lo stesso motivo per cui `normalize_sql` lascia intatte le
+    stringhe.
+  - **Le azioni delle chiavi esterne non si confrontavano mai.**
+    `ON DELETE CASCADE` contro `ON DELETE RESTRICT` cambia cosa succede ai
+    dati, e non compariva. (SQLite non le riflette, quindi la' restano
+    invisibili comunque.)
+  - **Degli indici sfuggivano l'ordinamento e la condizione.** Un indice
+    `(a DESC)` risultava identico a `(a)`, e un indice parziale
+    `WHERE stato = 'x'` identico a uno pieno sulle stesse colonne.
+  - **Delle sequenze, `MINVALUE` e `MAXVALUE` venivano letti dal catalogo e
+    poi ignorati**: tetto 1000 e tetto 9999999999 risultavano identici.
+  - **Quando il catalogo delle sequenze non risponde**, i valori restavano
+    quelli predefiniti e venivano confrontati come se fossero veri: il
+    verdetto era casuale - una differenza che nessuno aveva verificato, o il
+    silenzio su una differenza che non si era in grado di vedere. Ora si
+    dichiara che non sono stati confrontati.
+- **I commenti di tabelle e colonne non si confrontavano mai.** Il commento del
+  catalogo e' quello che un collega legge per capire a cosa serve una tabella o
+  cosa significa una colonna (`A=attivo, S=sospeso`): due ambienti che la
+  documentano in modo diverso, o uno dei due che non la documenta affatto,
+  risultavano identici. Ora si confrontano, e lo script di allineamento li
+  sistema con `COMMENT ON` dove il motore lo permette. Dove i commenti non
+  esistono (SQLite) o non sono stati letti non si confrontano, invece di
+  dichiarare cancellato ogni commento dell'altro ambiente.
+- **Lo stato dei trigger non si confrontava.** Un trigger disattivato ha lo
+  stesso `CREATE` di uno attivo ma non scatta: due ambienti con lo stesso
+  codice si comportavano in modo diverso e il confronto non lo vedeva. Ora
+  si legge da ogni catalogo (`tgenabled`, `status`, `is_disabled`) e lo
+  script lo allinea con `ENABLE`/`DISABLE`. Su MySQL e SQLite un trigger non
+  si disattiva: la' non c'e' stato da leggere, e "non si sa" non viene
+  confrontato con "attivo".
+- **Il default `'0'` risultava uguale al default `0`.** La normalizzazione
+  toglieva gli apici esterni sempre, percio' il testo `'0'` di una colonna
+  `VARCHAR` e il numero `0` di una colonna numerica diventavano la stessa
+  cosa. Gli apici attorno a un numero sono l'unica cosa che distingue i due
+  casi e ora restano; attorno a un testo si tolgono come prima, perche'
+  servono a confrontare fra dialetti che li scrivono in modo diverso.
+- **Lo stesso numero scritto `-1` o `- 1` risultava diverso.** Un falso
+  allarme, non un silenzio: il lexer legge `-1` come un numero solo e `- 1`
+  come due token, percio' bastava un editor che aggiunge uno spazio - o un
+  `saldo-1` scritto senza spazi contro un `saldo - 1` - per vedere comparire
+  una differenza che non c'era.
+- **Una sola tabella illeggibile faceva fallire la lettura di tutto
+  l'ambiente.** La riflessione era una sola istruzione per tutte le tabelle:
+  bastava una tabella con un riferimento rotto, un tipo che il dialetto non sa
+  ricostruire o un permesso che manca, e non si otteneva nessun confronto -
+  nemmeno sulle tabelle sane, comprese quelle che venivano dopo nella lettura.
+  Ora, quando la lettura in blocco fallisce, si riparte una tabella alla
+  volta: quelle che si leggono si confrontano, e quelle che restano fuori
+  vengono dichiarate nel report e nello script come non confrontate. "Non
+  l'ho letta" e "non c'e'" sono due cose diverse, e la seconda sarebbe una
+  bugia.
+
+### Cambiato
+
+- **Il formato degli snapshot passa alla versione 2**, per contenere le azioni
+  delle chiavi esterne, i dettagli degli indici, il marchio sui valori delle
+  sequenze non letti, i commenti di tabelle e colonne, lo stato dei trigger e
+  le tabelle che non si sono potute leggere. Gli snapshot salvati prima si
+  rileggono senza problemi, ma di quegli aspetti non contengono nulla:
+  confrontandoli con un database letto dal vivo vengono saltati e il log lo
+  dice, invece di far comparire differenze che vengono dal file e non dai
+  database. Rigenerali per averli. Un file scritto da questa versione **non si apre con
+  una DiFFDB precedente**, che lo dira' chiedendo di aggiornare. Per questo la
+  versione passa a 1.5.0 e non a 1.4.4: non e' solo una correzione, cambia
+  cosa i file contengono e cosa le versioni precedenti sanno leggere.
+- **`--verify` dice quando l'impronta non e' confrontabile**, invece di
+  rispondere "l'ambiente e' CAMBIATO". L'impronta riassume tutto quello che
+  lo snapshot contiene: con il formato 2 contiene piu' cose, percio' la stessa
+  impronta dello stesso ambiente immobile viene diversa da quella scritta in
+  uno script generato prima. Rispondere "cambiato" sarebbe stato un falso
+  allarme che insegna a non fidarsi del controllo. Ora lo script porta in
+  testa anche *come* l'impronta e' stata calcolata, e verificarne uno
+  generato da una versione precedente lo dice chiaramente e chiede di
+  rigenerarlo. **Gli script generati fino alla 1.4.3 vanno rigenerati per
+  poter essere verificati**; eseguirli resta possibile come prima.
+- **Lo script di allineamento dichiara le differenze di attributo** invece di
+  saltarle. Questi oggetti esistono in entrambi gli ambienti e combaciano per
+  colonne, percio' la generazione non li vedeva e l'utente trovava la
+  differenza nel report ma niente nello script. Allinearli richiede di
+  eliminarli e ricrearli, cosa che dipende dalla finestra di manutenzione:
+  lo script lo scrive e lascia decidere, come fa per la chiave primaria.
+- **L'identita' di indici e chiavi esterne resta quella di prima** (colonne,
+  unicita', bersaglio) e i nuovi attributi si confrontano a parte, come si fa
+  per il tipo di una colonna. La firma e' anche la chiave con cui la
+  generazione degli script ritrova l'oggetto da ricreare: arricchirla avrebbe
+  trasformato un attributo cambiato in "oggetto assente qui e presente la'" e
+  avrebbe potuto far smettere di funzionare quella ricerca in silenzio.
+
 ## [1.4.3] - 2026-11-20
 
 ### Corretto
